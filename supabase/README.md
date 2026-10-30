@@ -1,0 +1,81 @@
+# Dream Piggy Bank Supabase PostgreSQL
+
+Auth0 remains the only login provider, including the existing email and `paypal-sandbox` connection. There is no Supabase Auth login or token exchange.
+
+## Deployment configuration
+
+1. Create/select a Supabase project. Link the CLI with `supabase link --project-ref <project-ref>`, then apply all versioned migrations with `supabase db push`. Alternatively, run the SQL files in filename order in the SQL editor as the database owner. Back up an existing database before deployment; this initial schema expects the Dream Piggy Bank table names to be unused.
+2. In **Authentication ? Third-party Auth**, add **Auth0** with your tenant ID and region. For `dev-arafat.eu.auth0.com`, these are `dev-arafat` and `eu`; confirm against your actual `AUTH0_DOMAIN`. Keep the existing Auth0 application, callbacks, email connection and PayPal Sandbox connection.
+3. Deploy `auth0-actions/add-supabase-authenticated-role.js` as an Auth0 **Post Login** Action and attach it to the Login flow. It sets the literal, non-namespaced **ID-token** claim `role: "authenticated"`. Do not substitute an access-token claim. Use RS256 signing. Sign out and sign in again so existing sessions obtain the new claim.
+4. Configure server environment variables:
+
+   ```dotenv
+   AUTH0_ENABLED=true
+   # Keep the existing AUTH0_DOMAIN and AUTH0_CLIENT_ID (no custom API audience).
+   SUPABASE_ENABLED=true
+   SUPABASE_URL=https://<project-ref>.supabase.co
+   SUPABASE_PUBLISHABLE_KEY=<publishable-key>
+   SUPABASE_SECRET_KEY=<server-secret-key>
+   ALLOW_DEMO=false
+   ```
+
+   The server supports legacy `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` alternatives. Never put a secret/service-role key in a `VITE_` variable. Only the URL and publishable key are returned from `/api/config`. Restart the server after configuration changes. CSP permits only the configured Supabase origin.
+
+5. Leave `private` out of the Data API's exposed schemas. In Supabase's API settings, disable automatic grants for new public objects if offered. Migrations revoke default table/sequence/function privileges for objects created by `postgres` in `public`; if you use another migration owner, apply equivalent default-privilege rules for that owner too. Grant future objects explicitly.
+6. Validate with two separate Auth0 accounts: each starts with three empty wallets; complete onboarding, reload, and confirm the preferences survive. Query `profiles` with each account's ID token and confirm only its own row is returned. Check a missing/forged/expired token is rejected by the hosted gateway. Do not use a service key for this browser validation.
+
+The integration follows the [official Supabase Auth0 guide](https://supabase.com/docs/guides/auth/third-party/auth0): the browser SDK's `accessToken` callback returns `getIdTokenClaims().__raw`. Supabase verifies the signature and trusted issuer before PostgreSQL evaluates RLS. The local role check is a configuration guard, not signature verification. The existing first-party Express server verifies the same app-bound Auth0 **ID token** (issuer, client-ID audience, RS256, expiry, subject, authenticated role and authorized party), then derives the opaque `sub` used for backend operations. Neither email nor a UUID conversion identifies an account.
+
+## Database and service boundaries
+
+- `src/supabase.ts`: official SDK, current ID-token callback, no Supabase session storage, no anonymous fallback after logout.
+- `server/supabase.ts`: server-only database services for profiles, preferences, wallets, transactions and ledger RPCs.
+- `server/database-state.ts`: maps PostgreSQL financial data into the existing UI, reports and currency insights.
+- `migrations/202610260001_walletwise_core.sql`: all eleven requested tables, RLS, explicit grants, initialization/onboarding and transactional ledger functions.
+- `migrations/202610260002_wallet_preferences.sql`: atomic partial preference updates and persisted round-up rules.
+- `migrations/202610260003_accept_savings_rule.sql`: atomic acceptance of existing report recommendations, with settings and ledger revision checks. Apply this new migration before using recommendation acceptance with Supabase.
+
+Clients have SELECT-only grants with subject-based RLS. Exchange rates are shared with authenticated clients. Even `service_role` has only SELECT access to these tables; writes use explicitly granted security-definer functions with an empty search path. The database owner remains responsible for administrative maintenance. Default grants do not affect unrelated existing tables.
+
+Initialization inserts the profile, ILS/USD/JOD wallets and savings rules atomically with conflict handling. Wallets start at zero. Onboarding locks the profile and completes once; subsequent preference changes use a separate patch operation. All monetary amounts are integer minor units: 100 per ILS/USD, 1000 per JOD. Balances and postings are bounded to JavaScript's safe-integer range.
+
+Monetary operations lock the user's wallets in currency order, check per-currency balanced postings and nonnegative balances, and commit the transaction, ledger and balances together. `(auth0_sub, request_id)` prevents duplicate execution; a changed fingerprint rejects key reuse. Refunds must reverse an owned purchase and can occur only once even with a different request ID. No public route credits arbitrary opening balances. PayPal Sandbox remains a sandbox and does not credit real wallet funds. Only explicitly enabled demo fixtures use fictional money.
+
+This integrates the financial core and onboarding; existing auxiliary goals/alerts/report-history/PayPal-order storage and PMA snapshot retrieval retain their current implementation. Their requested relational tables are created and protected, but this change does not backfill or automatically migrate legacy records. Keep the existing SQLite/Firestore configuration for those features. Real account data is never seeded from demo balances.
+
+## Verification
+
+```sh
+npm test
+npm run lint
+npm run build
+npm run test:e2e -- tests/e2e/auth.spec.ts tests/e2e/onboarding.spec.ts
+```
+
+`tests/database.test.ts` executes all migrations in PGlite (embedded PostgreSQL), including RLS and grants under actual `authenticated`, `anon` and `service_role` roles. Only `pgcrypto` installation is omitted in that harness because core PostgreSQL already supplies `gen_random_uuid()`. It tests all user tables, zero wallets, JOD accounting, rollback, replay, refund protection and onboarding/preferences. SDK tests inspect actual outgoing authorization headers and logout behavior. Backend tests cover verified subject propagation and persisted savings rules; existing Auth0 tests verify signed JWTs.
+
+For a full local Supabase stack with Docker and the Supabase CLI:
+
+```sh
+supabase start
+supabase db reset
+supabase test db
+```
+
+The pgTAP smoke suite in `tests/rls.sql` runs in a rolled-back transaction. Local SQL tests simulate claims _after_ gateway verification; they do not prove a hosted Auth0/Supabase tenant is configured correctly. Hosted gateway verification requires the manual deployment checks above.
+
+## Current authentication status
+
+See [AUTH0_SETUP.md](../AUTH0_SETUP.md) for the 2026-10-27 audience removal and live blockers. Audience-free email redirects reach Auth0 login; PayPal reports a disabled connection. The currently configured Data API returns PGRST205 for Dream Piggy Bank tables. Confirm the intended project and migrations before testing authenticated profiles. The earlier audit is historical.
+
+## Audit diagnostics
+
+See `../AUDIT_REPORT.md` for the verification performed on 2026-10-26 and remaining deployment checks. The audit did not alter live user data or apply migration 003.
+
+```sh
+npx tsx scripts/check-integrations.ts
+npx tsx scripts/check-pma-readonly.ts
+npx tsx scripts/audit-secrets.ts
+```
+
+These diagnostics issue read-only external requests and print statuses instead of tokens or user records. Tests ignore local environment files; Playwright uses its own API/frontend ports (3101/5174), disabled external integrations, and an isolated demo database. Local runtime precedence is deployment/process variables, `.env.local`, `.env`, then `.env.auth0`.

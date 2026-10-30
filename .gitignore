@@ -134,3 +134,14 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+data/
+.env
+.env.local
+dist/
+node_modules/
+playwright-report/
+test-results/
+
+.env.*
+!.env.example
