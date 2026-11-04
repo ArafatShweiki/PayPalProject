@@ -14,6 +14,8 @@ const tables = [
   "currency_alerts",
   "notifications",
   "ai_reports",
+  "account_state",
+  "funding_orders",
 ];
 const url = process.env.SUPABASE_URL;
 const publishable =

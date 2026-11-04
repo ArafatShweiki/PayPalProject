@@ -1,4 +1,13 @@
-import { publicMarketRouter } from "./public-market";
+import {
+  circlesRouter,
+  invitationPublicRouter,
+  savingsRpc,
+} from "./savings-circles";
+import { databaseError } from "./database-errors";
+import { diagnostics, timed } from "./diagnostics";
+import { bootstrap } from "./bootstrap";
+import { progressiveRouter } from "./progressive";
+import { fundingRouter, fundingEnabled } from "./funding";
 import { forexEnabled, forexStatus } from "./forex";
 import { forexHistory } from "./forex-store";
 import {
@@ -14,33 +23,41 @@ import "./env";
 import express from "express";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
-import { ServiceError, limitMiddleware, fingerprint } from "./reliability";
-import { randomUUID, createHash } from "node:crypto";
-import { getAuth } from "firebase-admin/auth";
+import { ServiceError, limitMiddleware } from "./reliability";
+import { randomUUID } from "node:crypto";
+
 import { z } from "zod";
 import { currencies, minor, convert } from "../shared/money";
 import type { Entry, Preferences, UserData } from "../shared/types";
-import { append, balances, idempotent, purchase, refund } from "./ledger";
-import { firebaseEnabled, userRead, userUpdate, snapshots } from "./store";
+import { append, balances, idempotent } from "./ledger";
+import {
+  firebaseEnabled,
+  userRead,
+  userUpdate,
+  snapshots,
+  registerUserIdentity,
+} from "./store";
 import { refreshRates, stale, rateStaleMs } from "./rates";
-import { buildReport, explain } from "./reports";
-import { paypal, paypalEnabled, verifyCapture } from "./paypal";
+
 import { currencyInsight } from "./currency-insights";
-import { auth0Enabled, auth0Config, verifyWalletIdentity } from "./auth0";
+import {
+  auth0Enabled,
+  auth0Config,
+  verifyWalletIdentity,
+  auth0UserInfo,
+} from "./auth0";
 import { onboardingRouter } from "./onboarding";
 import {
+  getServerSupabase,
   acceptSavingsRule,
   readIdempotentTransaction,
-  readSavingsRules,
   supabaseEnabled,
   initializeProfile,
   readProfile,
   applyLedgerTransaction,
-  readPurchasable,
-  readPurchaseLedger,
   updateProfilePreferences,
 } from "./supabase";
-import { roundUp } from "../shared/money";
+
 export const app = express();
 app.disable("x-powered-by");
 app.use(
@@ -48,24 +65,32 @@ app.use(
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
+        scriptSrc: [
+          "'self'",
+          "https://www.sandbox.paypal.com",
+          "https://*.paypalobjects.com",
+        ],
         styleSrc: ["'self'", "'unsafe-inline'"],
         connectSrc: [
           "'self'",
-          "https://*.googleapis.com",
-          "https://*.firebaseapp.com",
-          "https://securetoken.googleapis.com",
+          "https://*.sandbox.paypal.com",
+          "https://*.paypalobjects.com",
           ...(supabaseEnabled()
             ? [new URL(process.env.SUPABASE_URL!).origin]
             : []),
           ...(auth0Config ? [`https://${auth0Config.domain}`] : []),
         ],
         frameSrc: [
-          "https://*.firebaseapp.com",
+          "https://*.sandbox.paypal.com",
           ...(auth0Config ? [`https://${auth0Config.domain}`] : []),
         ],
         workerSrc: ["'self'", "blob:"],
-        imgSrc: ["'self'", "data:"],
+        imgSrc: [
+          "'self'",
+          "data:",
+          "https://*.paypalobjects.com",
+          "https://*.sandbox.paypal.com",
+        ],
       },
     },
   }),
@@ -77,6 +102,7 @@ app.use("/api", (_req, res, next) => {
   next();
 });
 app.use("/api", limitMiddleware("entry", "RATE_LIMIT_ENTRY", 120));
+app.use(diagnostics);
 app.use(express.json({ limit: "32kb" }));
 app.use(cookieParser());
 const currency = z.enum(currencies);
@@ -95,17 +121,10 @@ app.get("/api/config", (_req, res) =>
             process.env.SUPABASE_ANON_KEY,
         }
       : null,
-    firebase: !auth0Enabled && firebaseEnabled,
-    firebaseConfig: firebaseEnabled
-      ? {
-          apiKey: process.env.FIREBASE_WEB_API_KEY,
-          authDomain: process.env.FIREBASE_AUTH_DOMAIN,
-          projectId: process.env.FIREBASE_PROJECT_ID,
-        }
-      : null,
   }),
 );
-app.use("/api/market-data", publicMarketRouter);
+
+app.use("/api", invitationPublicRouter);
 app.get("/api/cron", async (req, res) => {
   if (
     !process.env.CRON_SECRET ||
@@ -133,15 +152,14 @@ app.use("/api", async (req, res, next) => {
         res.status(401).json({ error: "Please sign in to continue." });
         return;
       }
-      const identity = await verifyWalletIdentity(token);
+      const identity = await timed("auth_verify", () =>
+        verifyWalletIdentity(token),
+      );
       res.locals.uid = identity.uid;
       res.locals.sub = identity.sub;
       res.locals.idToken = token;
       res.locals.authMode = "auth0";
-    } else if (token && firebaseEnabled) {
-      const verified = await getAuth().verifyIdToken(token, true);
-      res.locals.uid = verified.uid;
-      res.locals.authMode = "firebase";
+      registerUserIdentity(identity.uid, identity.sub);
     } else {
       res.status(401).json({ error: "Please sign in to continue." });
       return;
@@ -197,12 +215,19 @@ app.use("/api", (req, res, next) => {
   )(req, res, next);
 });
 app.use("/api", async (_req, res, next) => {
+  if (!supabaseEnabled()) {
+    res.status(503).json({
+      error:
+        "Account setup is incomplete. Please contact the app administrator.",
+    });
+    return;
+  }
   if (res.locals.authMode === "auth0" && supabaseEnabled()) {
     try {
-      await initializeProfile(res.locals.sub);
-      await userUpdate(res.locals.uid, (data) => {
-        data.auth0Sub = res.locals.sub;
-      });
+      // Request-local profile only: no cross-user/session cache and no auxiliary write.
+      res.locals.profile =
+        (await readProfile(res.locals.sub)) ??
+        (await timed("db_initialize", () => initializeProfile(res.locals.sub)));
     } catch {
       res
         .status(503)
@@ -213,13 +238,24 @@ app.use("/api", async (_req, res, next) => {
   next();
 });
 app.use("/api/onboarding", onboardingRouter);
+app.get("/api/bootstrap", async (_req, res) => {
+  const loaded = await bootstrap(res.locals.sub, res.locals.profile);
+  if (!loaded.onboarding.complete) {
+    const identity = await auth0UserInfo(res.locals.idToken, res.locals.sub);
+    loaded.onboarding.fullName ||= identity.name;
+    loaded.onboarding.email ||= identity.email;
+    loaded.onboarding.emailVerified =
+      identity.emailVerified && loaded.onboarding.email === identity.email;
+  }
+  res.json(loaded);
+});
 app.use("/api", async (req, res, next) => {
   if (
     res.locals.authMode === "auth0" &&
     supabaseEnabled() &&
     req.path !== "/logout"
   ) {
-    const profile = await readProfile(res.locals.sub);
+    const profile = res.locals.profile;
     if (!profile?.onboarding_completed_at) {
       res.status(403).json({
         code: "ONBOARDING_REQUIRED",
@@ -239,11 +275,41 @@ app.use("/api", async (req, res, next) => {
   }
   next();
 });
+app.use("/api", async (req, res, next) => {
+  if (
+    ["GET", "HEAD"].includes(req.method) ||
+    req.path.startsWith("/funding") ||
+    req.path === "/logout"
+  ) {
+    next();
+    return;
+  }
+  const { data, error } = await getServerSupabase()
+    .from("funding_orders")
+    .select("id")
+    .eq("auth0_sub", res.locals.sub)
+    .eq("status", "REFUND_REVIEW")
+    .limit(1);
+  if (error) {
+    res.status(503).json({ error: "Account storage is unavailable." });
+    return;
+  }
+  if (data?.length) {
+    res.status(409).json({
+      error:
+        "A payment reversal needs review before more wallet activity is allowed.",
+    });
+    return;
+  }
+  next();
+});
+app.use("/api", progressiveRouter);
 app.get("/api/state", async (_req, res) => {
   if (res.locals.authMode === "auth0" && supabaseEnabled()) {
     const { data, walletBalances, savingsBalances } = await databaseState(
       res.locals.sub,
       res.locals.uid,
+      res.locals.profile,
     );
     res.json({
       ...data,
@@ -255,7 +321,7 @@ app.get("/api/state", async (_req, res) => {
       authMode: "auth0",
       capabilities: {
         firebase: firebaseEnabled,
-        paypal: paypalEnabled(),
+        paypal: fundingEnabled(),
         gemini: !!process.env.GEMINI_API_KEY,
       },
     });
@@ -273,7 +339,7 @@ app.get("/api/state", async (_req, res) => {
     authMode: res.locals.authMode,
     capabilities: {
       firebase: firebaseEnabled,
-      paypal: paypalEnabled(),
+      paypal: fundingEnabled(),
       gemini: !!process.env.GEMINI_API_KEY,
     },
   });
@@ -291,6 +357,7 @@ const mutate = (
   userUpdate(uid, (data) =>
     idempotent(data, key, JSON.stringify(body), () => fn(data)),
   );
+app.use("/api", circlesRouter);
 app.post("/api/purchases", async (req, res) => {
   const body = z
     .object({
@@ -306,91 +373,33 @@ app.post("/api/purchases", async (req, res) => {
         "Bills",
         "Other",
       ]),
+      quoteId: z.uuid().nullable().optional(),
+      skipSavings: z.boolean().default(false),
     })
     .parse(req.body);
-  if (res.locals.authMode === "auth0" && supabaseEnabled()) {
-    const profile = await readProfile(res.locals.sub);
-    const rules = await readSavingsRules(res.locals.sub);
-    const rule = rules.find((r) => r.currency === body.currency);
-    const value = minor(body.amount, body.currency);
-    const saved = profile?.savings_enabled
-      ? roundUp(value, Number(rule!.increment_minor), Number(rule!.cap_minor))
-      : 0;
-    const result = await applyLedgerTransaction({
-      sub: res.locals.sub,
-      requestId: body.requestId,
-      fingerprint: JSON.stringify(body),
-      kind: "purchase",
-      metadata: {
-        goalId:
-          profile?.wallet_preferences.goalIds?.[body.currency] ||
-          (await userRead(res.locals.uid)).preferences.goalIds[body.currency],
-      },
-      description: body.description,
-      category: body.category,
-      entries: [
-        {
-          currency: body.currency,
-          account: "available",
-          amount_minor: -value - saved,
-        },
-        { currency: body.currency, account: "external", amount_minor: value },
-        ...(saved
-          ? [
-              {
-                currency: body.currency,
-                account: "savings" as const,
-                amount_minor: saved,
-              },
-            ]
-          : []),
-      ],
-    });
-    res.json(result);
-    return;
-  }
+  const fingerprint = JSON.stringify({ ...body, quoteId: undefined });
   res.json(
-    await mutate(res.locals.uid, body.requestId, body, (data) =>
-      purchase(
-        data,
-        body.currency,
-        minor(body.amount, body.currency),
-        body.description,
-        body.category,
-      ),
-    ),
+    await savingsRpc("walletwise_goal_purchase", {
+      p_sub: res.locals.sub,
+      p_key: body.requestId,
+      p_fingerprint: fingerprint,
+      p_currency: body.currency,
+      p_amount: minor(body.amount, body.currency),
+      p_description: body.description,
+      p_category: body.category,
+      p_quote: body.quoteId ?? null,
+      p_skip: body.skipSavings,
+    }),
   );
 });
 app.post("/api/refunds", async (req, res) => {
-  const body = z.object({ requestId, id }).parse(req.body);
-  if (res.locals.authMode === "auth0" && supabaseEnabled()) {
-    const prior = await readPurchasable(res.locals.sub, body.id);
-    if (!prior) throw new Error("Purchase not found.");
-    const postings = await readPurchaseLedger(res.locals.sub, body.id);
-    const result = await applyLedgerTransaction({
-      sub: res.locals.sub,
-      requestId: body.requestId,
-      fingerprint: JSON.stringify(body),
-      kind: "refund",
-      description: `Refund: ${prior.description}`,
-      category: prior.category,
-      entries: postings.map((entry) => ({
-        currency: entry.currency,
-        account: entry.account,
-        amount_minor: -Number(entry.amount_minor),
-      })),
-      metadata: {
-        originalId: body.id,
-        ...(prior.metadata?.goalId ? { goalId: prior.metadata.goalId } : {}),
-      },
-    });
-    res.json(result);
-    return;
-  }
+  const body = z.object({ requestId, id: z.uuid() }).parse(req.body);
   res.json(
-    await mutate(res.locals.uid, body.requestId, body, (data) =>
-      refund(data, body.id),
-    ),
+    await savingsRpc("walletwise_goal_refund", {
+      p_sub: res.locals.sub,
+      p_key: body.requestId,
+      p_original: body.id,
+    }),
   );
 });
 const numbers = z.object({
@@ -405,9 +414,9 @@ const preferences = z.object({
   increments: numbers,
   caps: numbers,
   goalIds: z.object({
-    ILS: id.optional(),
-    USD: id.optional(),
-    JOD: id.optional(),
+    ILS: id.nullable().optional(),
+    USD: id.nullable().optional(),
+    JOD: id.nullable().optional(),
   }),
   frequency: z.enum(["weekly", "monthly"]),
   notifications: z.boolean(),
@@ -420,15 +429,6 @@ app.put("/api/preferences", async (req, res) => {
       throw new Error("Complete onboarding first.");
     if (body.savings === "unseen")
       throw new Error("Savings setup has already been completed.");
-    if (body.goalIds) {
-      const data = await userRead(res.locals.uid);
-      for (const c of currencies)
-        if (
-          body.goalIds[c] &&
-          !data.goals.some((g) => g.id === body.goalIds![c] && g.currency === c)
-        )
-          throw new Error("Select a goal in the matching currency.");
-    }
     const profile = await updateProfilePreferences(res.locals.sub, body);
     res.json({
       ...(await userRead(res.locals.uid)).preferences,
@@ -457,6 +457,25 @@ app.put("/api/preferences", async (req, res) => {
     }),
   );
 });
+app.put("/api/savings/default", async (req, res) => {
+  const body = z
+    .object({ currency, goalId: z.uuid().nullable() })
+    .parse(req.body);
+  if (!body.goalId) {
+    res.json(
+      await updateProfilePreferences(res.locals.sub, { savings: "disabled" }),
+    );
+    return;
+  }
+  res.json(
+    await savingsRpc("walletwise_set_savings_destination", {
+      p_sub: res.locals.sub,
+      p_kind: "goal",
+      p_id: body.goalId,
+      p_enable: true,
+    }),
+  );
+});
 app.post("/api/goals", async (req, res) => {
   const body = z
     .object({
@@ -464,38 +483,42 @@ app.post("/api/goals", async (req, res) => {
       name: z.string().trim().min(1).max(60),
       currency,
       amount,
-      targetDate: z
-        .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/)
-        .optional(),
+      makeDefault: z.boolean().default(false),
+      targetDate: z.iso.date().optional(),
     })
     .parse(req.body);
-  const goal = await mutate(res.locals.uid, body.requestId, body, (data) => {
-    if (data.goals.length >= 25) throw new Error("Maximum 25 goals.");
-    const goal = {
-      id: randomUUID(),
-      name: body.name,
-      currency: body.currency,
-      target: minor(body.amount, body.currency),
-      createdAt: new Date().toISOString(),
-      ...(body.targetDate ? { targetDate: body.targetDate } : {}),
-    };
-    data.goals.push(goal);
-    data.preferences.goalIds[goal.currency] = goal.id;
-    return goal;
-  });
-  if (res.locals.authMode === "auth0" && supabaseEnabled()) {
-    const profile = await readProfile(res.locals.sub);
-    const selected = (await userRead(res.locals.uid)).preferences.goalIds;
-    await updateProfilePreferences(res.locals.sub, {
-      goalIds: {
-        ...selected,
-        ...profile?.wallet_preferences.goalIds,
-        [body.currency]: (goal as { id: string }).id,
+  await userRead(res.locals.uid);
+  const { data, error } = await getServerSupabase().rpc(
+    "walletwise_create_savings_goal",
+    {
+      p_sub: res.locals.sub,
+      p_uid: res.locals.uid,
+      p_key: body.requestId,
+      p_fingerprint: JSON.stringify(body),
+      p_goal: {
+        name: body.name,
+        currency: body.currency,
+        target: minor(body.amount, body.currency),
+        targetDate: body.targetDate,
       },
-    });
-  }
-  res.json(goal);
+      p_default: body.makeDefault,
+    },
+  );
+  if (error) throw databaseError(error);
+  res.json(data);
+});
+app.delete("/api/goals/:id", async (req, res) => {
+  const goalId = z.uuid().parse(req.params.id);
+  const { error } = await getServerSupabase().rpc(
+    "walletwise_archive_savings_goal",
+    {
+      p_sub: res.locals.sub,
+      p_uid: res.locals.uid,
+      p_goal: goalId,
+    },
+  );
+  if (error) throw databaseError(error);
+  res.json({ archived: true });
 });
 app.get("/api/rates/live", async (_req, res) => {
   if (!forexEnabled()) {
@@ -779,31 +802,46 @@ app.post("/api/rates/insight", async (req, res) => {
   );
 });
 app.post("/api/reports", async (req, res) => {
-  const { frequency } = z
-    .object({ frequency: z.enum(["weekly", "monthly"]) })
+  const { frequency, date, timezone } = z
+    .object({
+      frequency: z.enum(["weekly", "monthly"]),
+      date: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
+        .optional(),
+      timezone: z.string().max(80).default("UTC"),
+    })
+    .strict()
     .parse(req.body);
-  const data =
-    res.locals.authMode === "auth0" && supabaseEnabled()
-      ? (await databaseState(res.locals.sub, res.locals.uid)).data
-      : await userRead(res.locals.uid);
-  const { report, recommendations } = buildReport(data, frequency);
-  const result = await explain(
-    report,
-    await snapshots(),
+  try {
+    const { reportPeriod } = await import("../shared/report-period");
+    reportPeriod(frequency, Date.now(), date, timezone);
+  } catch {
+    throw new ServiceError("Choose a valid reporting date and timezone.", 400);
+  }
+  const data = (await databaseState(res.locals.sub, res.locals.uid)).data;
+  const { report: result, recommendations } = await (
+    await import("./reports")
+  ).generateSavedReport(
+    res.locals.sub,
     res.locals.uid,
-    fingerprint({
-      ledger: data.ledger,
-      goals: data.goals,
-      preferences: data.preferences,
-    }),
+    data,
+    frequency,
+    date,
+    timezone,
   );
   await userUpdate(res.locals.uid, (data) => {
+    data.reports = data.reports.filter((r) => r.id !== result.id);
     data.reports.unshift(result);
     data.reports = data.reports.slice(0, 24);
+    const existingIds = new Set(data.recommendations.map((r) => r.id));
     data.recommendations.forEach((r) => {
-      if (r.status === "pending") r.status = "dismissed";
+      if (r.status === "pending" && r.reportId !== result.id)
+        r.status = "dismissed";
     });
-    data.recommendations.unshift(...recommendations);
+    data.recommendations.unshift(
+      ...recommendations.filter((r) => !existingIds.has(r.id)),
+    );
     data.recommendations = data.recommendations.slice(0, 72);
   });
   res.json(result);
@@ -815,7 +853,7 @@ app.post("/api/recommendations/:id", async (req, res) => {
   if (res.locals.authMode === "auth0" && supabaseEnabled()) {
     const data = await userRead(res.locals.uid);
     const rule = data.recommendations.find((r) => r.id === req.params.id);
-    if (!rule) throw new Error("Recommendation not found.");
+    if (!rule) throw new ServiceError("Recommendation not found.", 404);
     if (rule.status !== "pending") {
       res.json(rule);
       return;
@@ -852,110 +890,7 @@ app.post("/api/recommendations/:id", async (req, res) => {
     }),
   );
 });
-app.post("/api/paypal/orders", async (req, res) => {
-  const { requestId: key } = z.object({ requestId }).parse(req.body);
-  const data = await userRead(res.locals.uid);
-  const prior = data.sandbox.find((o) => o.requestId === key);
-  if (prior) {
-    res.json(prior);
-    return;
-  }
-  const origin = process.env.APP_ORIGIN || "http://127.0.0.1:5173";
-  const response = await paypal(
-    "/v2/checkout/orders",
-    {
-      intent: "CAPTURE",
-      purchase_units: [
-        {
-          amount: { currency_code: "USD", value: "1.00" },
-          description: "Dream Piggy Bank test payment",
-        },
-      ],
-      payment_source: {
-        paypal: {
-          experience_context: {
-            return_url: `${origin}/?paypal=approved`,
-            cancel_url: `${origin}/?paypal=canceled`,
-            user_action: "PAY_NOW",
-          },
-        },
-      },
-    },
-    createHash("sha256")
-      .update(res.locals.uid + key)
-      .digest("hex")
-      .slice(0, 36),
-  );
-  const approvalUrl = response.links?.find(
-    (l: { rel: string }) => l.rel === "payer-action" || l.rel === "approve",
-  )?.href;
-  if (
-    typeof response.id !== "string" ||
-    !approvalUrl ||
-    new URL(approvalUrl).hostname !== "www.sandbox.paypal.com"
-  )
-    throw new Error("PayPal did not return a valid Sandbox approval link.");
-  const order = {
-    id: response.id,
-    requestId: key,
-    status: "CREATED",
-    approvalUrl,
-    at: new Date().toISOString(),
-  };
-  await userUpdate(res.locals.uid, (data) => {
-    if (!data.sandbox.some((o) => o.id === order.id)) data.sandbox.push(order);
-  });
-  res.json(order);
-});
-app.post("/api/paypal/:id/capture", async (req, res) => {
-  const orderId = z
-    .string()
-    .regex(/^[A-Z0-9]+$/)
-    .parse(req.params.id);
-  const data = await userRead(res.locals.uid);
-  const order = data.sandbox.find((o) => o.id === orderId);
-  if (!order) throw new Error("Sandbox order not found for this account.");
-  if (order.status === "COMPLETED" || order.status === "CANCELED") {
-    res.json(order);
-    return;
-  }
-  // Reconcile first: a previous capture may have succeeded before its response was lost.
-  const current = await paypal(
-    `/v2/checkout/orders/${orderId}`,
-    undefined,
-    `lookup-${orderId}`,
-    "GET",
-  );
-  const hasCapture = current.purchase_units?.some(
-    (p: { payments?: { captures?: unknown[] } }) =>
-      p.payments?.captures?.length,
-  );
-  const response = hasCapture
-    ? current
-    : await paypal(
-        `/v2/checkout/orders/${orderId}/capture`,
-        {},
-        `capture-${orderId}`,
-      );
-  const verified = verifyCapture(response, orderId);
-  res.json(
-    await userUpdate(res.locals.uid, (data) => {
-      const o = data.sandbox.find((o) => o.id === orderId)!;
-      Object.assign(o, verified);
-      return o;
-    }),
-  );
-});
-app.post("/api/paypal/:id/cancel", async (req, res) => {
-  res.json(
-    await userUpdate(res.locals.uid, (data) => {
-      const order = data.sandbox.find((o) => o.id === req.params.id);
-      if (!order) throw new Error("Order not found.");
-      if (order.status === "CREATED") order.status = "CANCELED";
-      return order;
-    }),
-  );
-});
+app.use("/api/funding", fundingRouter);
 app.use("/api", (_req, res) =>
   res.status(404).json({ error: "Endpoint not found." }),
 );

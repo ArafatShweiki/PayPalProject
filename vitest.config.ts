@@ -1,10 +1,10 @@
 import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
+    setupFiles: ["./tests/setup.ts"],
     include: ["tests/**/*.test.{ts,tsx}"],
     environment: "node",
     env: {
-      ALLOW_DEMO: "true",
       RATE_LIMIT_ENTRY: "10000",
       RATE_LIMIT_READ: "10000",
       STORAGE: "sqlite",

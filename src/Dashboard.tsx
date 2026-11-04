@@ -1,3 +1,5 @@
+import { DeferredSection } from "./DeferredSection";
+import type { Section } from "./useWalletData";
 import { snapshotRate, observationTime } from "../shared/market";
 import { useMemo, useState, type ReactNode } from "react";
 import {
@@ -13,7 +15,6 @@ import type { State, Entry } from "../shared/types";
 import { CurrencySelect, Empty, PanelHead, date, time } from "./ui";
 import { Transactions } from "./Wallet";
 import { goalAmount, goalProgress } from "./savings";
-
 export function BentoCard({
   children,
   className = "",
@@ -23,7 +24,13 @@ export function BentoCard({
 }) {
   return <section className={`bento-card ${className}`}>{children}</section>;
 }
-export function SpendingActivity({ state }: { state: State }) {
+export function SpendingActivity({
+  state,
+  bare = false,
+}: {
+  state: State;
+  bare?: boolean;
+}) {
   const [days, setDays] = useState(7);
   const [currency, setCurrency] = useState<Currency>(
     state.preferences.preferred,
@@ -38,15 +45,20 @@ export function SpendingActivity({ state }: { state: State }) {
       );
       const end = new Date(start);
       end.setDate(end.getDate() + 1);
-      const amount = state.ledger
-        .filter(
-          (e) =>
-            e.kind === "purchase" &&
-            e.currency === currency &&
-            new Date(e.at) >= start &&
-            new Date(e.at) < end,
-        )
-        .reduce((sum, e) => sum + e.amount, 0);
+      const day = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-${String(start.getDate()).padStart(2, "0")}`;
+      const amount = state.dashboard
+        ? state.dashboard.dailySpending
+            .filter((r) => r.currency === currency && r.day === day)
+            .reduce((sum, r) => sum + r.amount, 0)
+        : state.ledger
+            .filter(
+              (e) =>
+                e.kind === "purchase" &&
+                e.currency === currency &&
+                new Date(e.at) >= start &&
+                new Date(e.at) < end,
+            )
+            .reduce((sum, e) => sum + e.amount, 0);
       return {
         label: start.toLocaleDateString(undefined, {
           month: "short",
@@ -55,10 +67,11 @@ export function SpendingActivity({ state }: { state: State }) {
         amount,
       };
     });
-  }, [state.ledger, days, currency]);
+  }, [state.ledger, state.dashboard, days, currency]);
   const max = Math.max(1, ...buckets.map((b) => b.amount));
+  const Card = bare ? "div" : BentoCard;
   return (
-    <BentoCard className="bento-half">
+    <Card className={bare ? undefined : "bento-half"}>
       <PanelHead
         title="Spending activity"
         subtitle="Recorded purchases · refunds shown in activity"
@@ -121,10 +134,16 @@ export function SpendingActivity({ state }: { state: State }) {
       ) : (
         <Empty>No purchases in this period and currency.</Empty>
       )}
-    </BentoCard>
+    </Card>
   );
 }
-export function CurrencyTrends({ state }: { state: State }) {
+export function CurrencyTrends({
+  state,
+  bare = false,
+}: {
+  state: State;
+  bare?: boolean;
+}) {
   const [pair, setPair] = useState("USD/ILS");
   const [from, to] = pair.split("/") as [Currency, Currency];
   const snapshots = useMemo(
@@ -148,16 +167,15 @@ export function CurrencyTrends({ state }: { state: State }) {
   const y = (v: number) => 115 - ((v - min) / (max - min || 1)) * 85;
   const index =
     point !== null && point < values.length ? point : values.length - 1;
+  const Card = bare ? "div" : BentoCard;
   return (
-    <BentoCard className="bento-half">
+    <Card className={bare ? undefined : "bento-half"}>
       <PanelHead
         title="Currency trends"
         subtitle={
-          state.authMode === "demo" && state.demoMarketMode !== "live"
-            ? "Simulated sample observations"
-            : state.snapshots.at(-1)?.market
-              ? "Twelve Data stored market observations"
-              : "Stored PMA midpoint observations"
+          state.snapshots.at(-1)?.market
+            ? "Twelve Data stored market observations"
+            : "Stored PMA midpoint observations"
         }
         action={
           <select
@@ -253,7 +271,7 @@ export function CurrencyTrends({ state }: { state: State }) {
           </small>
         </>
       )}
-    </BentoCard>
+    </Card>
   );
 }
 export function Dashboard({
@@ -263,6 +281,12 @@ export function Dashboard({
   onNavigate,
   onCreate,
   onSelect,
+  onAddFunds,
+  sections,
+  onRetrySection,
+  marketLoading,
+  marketError,
+  onRetryMarket,
 }: {
   state: State;
   display: Currency;
@@ -271,40 +295,62 @@ export function Dashboard({
     page: "My Wallet" | "Smart Savings" | "Currency Rates" | "Reports",
   ) => void;
   onCreate: () => void;
+  onAddFunds?: () => void;
   onSelect: (e: Entry) => void;
+  sections?: Record<Section, { loading: boolean; error?: unknown }>;
+  onRetrySection?: (s: Section) => void;
+  marketLoading?: boolean;
+  marketError?: unknown;
+  onRetryMarket?: () => void;
 }) {
   const latest = state.snapshots.at(-1);
   const combined = (balances: State["balances"]) =>
-    latest
-      ? currencies.reduce(
-          (sum, c) =>
-            sum +
-            (balances[c] > 0
-              ? convert(
-                  balances[c],
-                  c,
-                  display,
-                  snapshotRate(latest, c, display),
-                )
-              : 0),
-          0,
-        )
-      : null;
+    currencies.every((c) => balances[c] === 0)
+      ? 0
+      : latest
+        ? currencies.reduce(
+            (sum, c) =>
+              sum +
+              (balances[c] > 0
+                ? convert(
+                    balances[c],
+                    c,
+                    display,
+                    snapshotRate(latest, c, display),
+                  )
+                : 0),
+            0,
+          )
+        : null;
+  const inclusiveSavings = { ...state.savingsBalances };
+  for (const c of currencies)
+    inclusiveSavings[c] += state.dashboard?.circleSavings?.[c] ?? 0;
   const total = combined(state.balances),
-    savings = combined(state.savingsBalances);
+    savings = Object.values(inclusiveSavings).every(Number.isSafeInteger)
+      ? combined(inclusiveSavings)
+      : null;
   const goal =
-    state.goals.find((g) => g.id === state.preferences.goalIds[display]) ??
-    state.goals[0];
+    state.goals.find(
+      (g) =>
+        g.id === state.preferences.savingsDestination?.id &&
+        !g.archived &&
+        goalAmount(state, g.id) < g.target,
+    ) ?? state.goals[0];
   const now = new Date();
-  const spending = state.ledger
-    .filter(
-      (e) =>
-        e.currency === display &&
-        e.kind === "purchase" &&
-        new Date(e.at).getMonth() === now.getMonth() &&
-        new Date(e.at).getFullYear() === now.getFullYear(),
-    )
-    .reduce((s, e) => s + e.amount, 0);
+  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const spending = state.dashboard
+    ? state.dashboard.dailySpending
+        .filter((r) => r.currency === display && r.day.startsWith(month))
+        .reduce((sum, r) => sum + r.amount, 0)
+    : state.ledger
+        .filter(
+          (e) =>
+            e.currency === display &&
+            e.kind === "purchase" &&
+            new Date(e.at).getMonth() === now.getMonth() &&
+            new Date(e.at).getFullYear() === now.getFullYear(),
+        )
+        .reduce((s, e) => s + e.amount, 0);
   const report = state.reports[0];
   const link = (label: string, page: Parameters<typeof onNavigate>[0]) => (
     <button className="text-link" onClick={() => onNavigate(page)}>
@@ -323,12 +369,17 @@ export function Dashboard({
             onChange={setDisplay}
           />
         </div>
+        {onAddFunds && (
+          <button className="text-link" onClick={onAddFunds}>
+            Add Funds
+          </button>
+        )}
         <div className="hero-value">
           {total === null ? "—" : money(total, display)}
         </div>
         <p>
           {latest
-            ? `${state.authMode === "demo" && state.demoMarketMode !== "live" ? "Simulated midpoint" : latest.market ? "Twelve Data quote" : "Indicative midpoint"} · ${date(latest.fetchedAt)}`
+            ? `${latest.market ? "Twelve Data quote" : "Indicative midpoint"} · ${date(latest.fetchedAt)}`
             : "Refresh currency rates to calculate a combined value."}
         </p>
         <div className="wallet-balances">
@@ -352,7 +403,9 @@ export function Dashboard({
         <small>Indicative value in {display}</small>
         <span className="pill green">
           {state.preferences.savings === "enabled"
-            ? "Round-ups active"
+            ? state.preferences.savingsDestination
+              ? "Round-ups active"
+              : "Setup pending"
             : "Round-ups inactive"}
         </span>
         {link("Explore savings", "Smart Savings")}
@@ -362,7 +415,14 @@ export function Dashboard({
           <Wallet size={19} />
         </span>
         <h2>Monthly spending</h2>
-        <strong className="metric-value">{money(spending, display)}</strong>
+        <DeferredSection
+          label="monthly spending"
+          compact
+          {...sections?.overview}
+          retry={() => onRetrySection?.("overview")}
+        >
+          <strong className="metric-value">{money(spending, display)}</strong>
+        </DeferredSection>
         <small>
           {now.toLocaleDateString(undefined, {
             month: "long",
@@ -373,21 +433,44 @@ export function Dashboard({
         <p>See how everyday purchases add up.</p>
         {link("View activity", "My Wallet")}
       </BentoCard>
-      <SpendingActivity state={state} />
-      <CurrencyTrends state={state} />
+      <BentoCard className="bento-half">
+        <DeferredSection
+          label="spending chart"
+          {...sections?.overview}
+          retry={() => onRetrySection?.("overview")}
+        >
+          <SpendingActivity state={state} bare />
+        </DeferredSection>
+      </BentoCard>
+      <BentoCard className="bento-half">
+        <DeferredSection
+          label="currency trends"
+          loading={marketLoading}
+          error={marketError}
+          retry={onRetryMarket}
+        >
+          <CurrencyTrends state={state} bare />
+        </DeferredSection>
+      </BentoCard>
       <BentoCard className="bento-half recent-bento">
         <PanelHead
           title="Recent activity"
           subtitle="Your latest wallet movements"
           action={link("View all", "My Wallet")}
         />
-        <Transactions
-          entries={state.ledger
-            .filter((e) => e.kind !== "opening")
-            .slice(-5)
-            .reverse()}
-          onSelect={onSelect}
-        />
+        <DeferredSection
+          label="recent activity"
+          {...sections?.activity}
+          retry={() => onRetrySection?.("activity")}
+        >
+          <Transactions
+            entries={state.ledger
+              .filter((e) => e.kind !== "opening")
+              .slice(-5)
+              .reverse()}
+            onSelect={onSelect}
+          />
+        </DeferredSection>
       </BentoCard>
       <BentoCard className="goal-bento">
         <PanelHead
@@ -395,69 +478,83 @@ export function Dashboard({
           subtitle="A little closer, every day"
           action={<Target size={19} />}
         />
-        {goal ? (
-          <>
-            <span className="eyebrow">
-              {state.preferences.goalIds[goal.currency] === goal.id
-                ? "ACTIVE DESTINATION"
-                : "SAVINGS GOAL"}{" "}
-              · {goal.currency}
-            </span>
-            <h3>{goal.name}</h3>
-            <strong className="metric-value">
-              {goalProgress(goal, goalAmount(state, goal.id))}%
-            </strong>
-            <progress
-              aria-label={`${goal.name} progress`}
-              value={Math.min(
-                goal.target,
-                Math.max(0, goalAmount(state, goal.id)),
-              )}
-              max={goal.target}
-            />
-            <small>
-              {money(goalAmount(state, goal.id), goal.currency)} of{" "}
-              {money(goal.target, goal.currency)}
-            </small>
-            {link("Inspect goal", "Smart Savings")}
-          </>
-        ) : (
-          <>
-            <Empty>No savings goals yet.</Empty>
-            <button className="text-link" onClick={onCreate}>
-              Create goal <ArrowRight size={15} />
-            </button>
-          </>
-        )}
+        <DeferredSection
+          label="savings progress"
+          {...sections?.overview}
+          retry={() => onRetrySection?.("overview")}
+        >
+          {goal ? (
+            <>
+              <span className="eyebrow">
+                {state.preferences.savingsDestination?.id === goal.id &&
+                !goal.archived &&
+                goalAmount(state, goal.id) < goal.target
+                  ? "DEFAULT GOAL"
+                  : "SAVINGS GOAL"}{" "}
+                · {goal.currency}
+              </span>
+              <h3>{goal.name}</h3>
+              <strong className="metric-value">
+                {goalProgress(goal, goalAmount(state, goal.id))}%
+              </strong>
+              <progress
+                aria-label={`${goal.name} progress`}
+                value={Math.min(
+                  goal.target,
+                  Math.max(0, goalAmount(state, goal.id)),
+                )}
+                max={goal.target}
+              />
+              <small>
+                {money(goalAmount(state, goal.id), goal.currency)} of{" "}
+                {money(goal.target, goal.currency)}
+              </small>
+              {link("Inspect goal", "Smart Savings")}
+            </>
+          ) : (
+            <>
+              <Empty>No savings goals yet.</Empty>
+              <button className="text-link" onClick={onCreate}>
+                Create goal <ArrowRight size={15} />
+              </button>
+            </>
+          )}
+        </DeferredSection>
       </BentoCard>
       <div className="bento-stack">
-        <BentoCard>
-          <PanelHead
-            title="Rate alerts"
-            subtitle={`${state.alerts.filter((a) => a.enabled).length} active alerts`}
-            action={<Bell size={17} />}
-          />
-          <p>
-            {state.notices.find((n) => !n.read)?.title ??
-              "Keep the rates that matter in view."}
-          </p>
-          {link("Manage alerts", "Currency Rates")}
-        </BentoCard>
-        <BentoCard>
-          <PanelHead
-            title="Latest insights"
-            subtitle={
-              report
-                ? `${report.source === "Gemini" ? "AI explanation" : "Calculated summary"} · ${date(report.at)}`
-                : "Grounded in your activity"
-            }
-          />
-          <p>
-            {report?.observations[0] ??
-              "Generate a report to understand your spending and saving habits."}
-          </p>
-          {link("Open reports", "Reports")}
-        </BentoCard>
+        <DeferredSection
+          label="alerts and insights"
+          {...sections?.overview}
+          retry={() => onRetrySection?.("overview")}
+        >
+          <BentoCard>
+            <PanelHead
+              title="Rate alerts"
+              subtitle={`${state.alerts.filter((a) => a.enabled).length} active alerts`}
+              action={<Bell size={17} />}
+            />
+            <p>
+              {state.notices.find((n) => !n.read)?.title ??
+                "Keep the rates that matter in view."}
+            </p>
+            {link("Manage alerts", "Currency Rates")}
+          </BentoCard>
+          <BentoCard>
+            <PanelHead
+              title="Latest insights"
+              subtitle={
+                report
+                  ? `${report.source === "Gemini" ? "AI explanation" : "Calculated summary"} · ${date(report.at)}`
+                  : "Grounded in your activity"
+              }
+            />
+            <p>
+              {report?.observations[0] ??
+                "Generate a report to understand your spending and saving habits."}
+            </p>
+            {link("Open reports", "Reports")}
+          </BentoCard>
+        </DeferredSection>
       </div>
     </div>
   );

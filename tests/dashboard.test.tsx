@@ -1,3 +1,5 @@
+import { bootstrapFixture, loadingResponse } from "./fixtures/loading";
+import { fundedUser } from "./fixtures/user";
 // @vitest-environment jsdom
 import React from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -6,7 +8,7 @@ import { Dashboard } from "../src/Dashboard";
 import { SavingsCarousel } from "../src/SavingsCarousel";
 import { App } from "../src/App";
 import { goalAmount } from "../src/savings";
-import { initialUser, balances } from "../shared/ledger";
+import { balances } from "../shared/ledger";
 import type { State } from "../shared/types";
 vi.mock("../src/api", () => ({
   initAuth: async () => false,
@@ -15,8 +17,8 @@ vi.mock("../src/api", () => ({
   logout: vi.fn(),
 }));
 import { api } from "../src/api";
-const fixture = (authMode: State["authMode"] = "demo"): State => {
-  const data = initialUser(true);
+const fixture = (authMode: State["authMode"] = "auth0"): State => {
+  const data = fundedUser();
   return {
     ...data,
     authMode,
@@ -38,7 +40,7 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
-it.each(["demo", "auth0"] as const)(
+it.each(["auth0"] as const)(
   "renders honest %s metrics and empty data without fabricating rates",
   (mode) => {
     const state = fixture(mode),
@@ -66,15 +68,16 @@ it.each(["demo", "auth0"] as const)(
   },
 );
 it("shows loading before asynchronous wallet data arrives", async () => {
-  let resolve!: (state: State) => void;
-  vi.mocked(api).mockReturnValue(
-    new Promise<State>((r) => {
-      resolve = r;
-    }),
+  let resolve!: (value: unknown) => void;
+  const pending = new Promise((r) => {
+    resolve = r;
+  });
+  vi.mocked(api).mockImplementation(async (path) =>
+    path === "/bootstrap" ? pending : loadingResponse(path, fixture()),
   );
   render(<App />);
   expect(screen.getByText("Getting your wallet ready")).toBeTruthy();
-  resolve(fixture());
+  resolve(bootstrapFixture(fixture()) as never);
   expect(await screen.findByText("Spending activity")).toBeTruthy();
 });
 it("selects and wraps goals with controls and keyboard without saving or creating records", () => {
@@ -122,11 +125,41 @@ it("selects and wraps goals with controls and keyboard without saving or creatin
   ).toBe("true");
   expect(destination).not.toHaveBeenCalled();
   expect(state.goals).toHaveLength(3);
-  fireEvent.click(screen.getByRole("button", { name: "Select goal" }));
+  fireEvent.click(screen.getByText("Goal options"));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Set as default savings goal" }),
+  );
   expect(destination).toHaveBeenCalledWith(state.goals[0]);
   expect(HTMLElement.prototype.scrollTo).toHaveBeenCalledWith(
     expect.objectContaining({ behavior: "instant" }),
   );
+});
+it("follows an explicitly saved personal goal while keeping browsing separate", () => {
+  const state = fixture();
+  state.goals = ["Laptop", "Travel"].map((name, i) => ({
+    id: String(i),
+    name,
+    currency: "USD",
+    target: 10000,
+    createdAt: new Date().toISOString(),
+  }));
+  const destination = vi.fn(),
+    props = {
+      state,
+      busy: false,
+      onCreate: vi.fn(),
+      onDestination: destination,
+    };
+  const { rerender } = render(
+    <SavingsCarousel {...props} selectedGoalId="0" />,
+  );
+  rerender(<SavingsCarousel {...props} selectedGoalId="1" />);
+  expect(
+    screen
+      .getByRole("button", { name: "Inspect Travel" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
+  expect(destination).not.toHaveBeenCalled();
 });
 it("handles empty goals and supports creation", () => {
   const create = vi.fn();
@@ -162,7 +195,9 @@ it("keeps goal totals synchronized after refunds and state refresh", () => {
     description: "Books",
     category: "Education",
     goalId: "g",
-    postings: [],
+    postings: [
+      { currency: "USD" as const, account: "savings" as const, amount: 500 },
+    ],
   };
   state.ledger.push(entry);
   const props = { busy: false, onCreate: vi.fn(), onDestination: vi.fn() };
@@ -172,7 +207,15 @@ it("keeps goal totals synchronized after refunds and state refresh", () => {
   ).toBe("500");
   const next = {
     ...state,
-    ledger: [...state.ledger, { ...entry, id: "r", kind: "refund" as const }],
+    ledger: [
+      ...state.ledger,
+      {
+        ...entry,
+        id: "r",
+        kind: "refund" as const,
+        postings: entry.postings.map((p) => ({ ...p, amount: -p.amount })),
+      },
+    ],
   };
   view.rerender(<SavingsCarousel state={next} {...props} />);
   expect(goalAmount(next, "g")).toBe(0);

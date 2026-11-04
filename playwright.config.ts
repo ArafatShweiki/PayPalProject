@@ -14,7 +14,6 @@ export default defineConfig({
         WALLETWISE_LOAD_ENV: "false",
         AUTH0_ENABLED: "false",
         SUPABASE_ENABLED: "false",
-        ALLOW_DEMO: "true",
         STORAGE: "sqlite",
         PORT: "3101",
         APP_ORIGIN: "http://127.0.0.1:5187",
@@ -30,7 +29,6 @@ export default defineConfig({
       command: "npx vite --host 127.0.0.1 --port 5187 --strictPort",
       env: {
         WALLETWISE_API_TARGET: "http://127.0.0.1:3101",
-        VITE_ENABLE_DEMO_MODE: "true",
       },
       url: "http://127.0.0.1:5187",
       reuseExistingServer: false,

@@ -1,13 +1,12 @@
+import { startStage, finishStage } from "./performance";
 import {
+  abortable,
   privateRequests,
   publicRequests,
   cacheScope,
   clearPrivateCache,
 } from "./requestCache";
 import { ApiError, userFacingMessage } from "./errors";
-import { demoRequest, isDemoActive } from "./demoSession";
-import type { Auth } from "firebase/auth";
-let auth: Auth | undefined;
 let auth0Token: (() => Promise<string>) | undefined;
 export function setAuth0TokenProvider(provider?: () => Promise<string>) {
   clearPrivateCache();
@@ -48,17 +47,23 @@ async function readJson(response: Response) {
 }
 export async function configuration() {
   return publicRequests.get("config", 60000, async (signal) => {
+    const deadline = AbortSignal.timeout(12000);
     for (let attempt = 0; ; attempt++) {
       try {
         const response = await fetch("/api/config", {
-          signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]),
+          signal: AbortSignal.any([
+            signal,
+            deadline,
+            AbortSignal.timeout(6000),
+          ]),
           cache: "no-store",
         });
         return await readJson(response);
       } catch (error) {
         if (
           signal.aborted ||
-          attempt >= 2 ||
+          deadline.aborted ||
+          attempt >= 1 ||
           (error instanceof ApiError && error.status < 500)
         )
           throw error;
@@ -69,60 +74,20 @@ export async function configuration() {
     }
   });
 }
-export async function initAuth() {
-  if (isDemoActive() || auth0Token) return false;
-  const config = await configuration();
-  if (config.firebase) {
-    const [{ initializeApp }, { getAuth, onAuthStateChanged }] =
-      await Promise.all([import("firebase/app"), import("firebase/auth")]);
-    auth = getAuth(initializeApp(config.firebaseConfig));
-    await new Promise<void>((resolve) => {
-      const off = onAuthStateChanged(auth!, () => {
-        off();
-        resolve();
-      });
-    });
-  }
-  return config.firebase as boolean;
-}
-export async function login(
-  email: string,
-  password: string,
-  register: boolean,
-) {
-  if (isDemoActive()) throw new Error("Exit Demo Mode before signing in.");
-  if (!auth)
-    throw new Error(
-      "Sign-in is currently unavailable. Please try again later.",
-    );
-  const { createUserWithEmailAndPassword, signInWithEmailAndPassword } =
-    await import("firebase/auth");
-  await (
-    register ? createUserWithEmailAndPassword : signInWithEmailAndPassword
-  )(auth, email, password);
-  clearPrivateCache();
-  cooldowns.clear();
-}
 export async function logout() {
-  if (isDemoActive())
-    throw new Error("Use Exit Demo Mode to end the local session.");
   try {
     await api("/logout", {});
   } finally {
     clearPrivateCache();
     cooldowns.clear();
-    if (auth) {
-      const { signOut } = await import("firebase/auth");
-      await signOut(auth);
-    }
   }
 }
 export async function api<T>(
   path: string,
   body?: unknown,
   method = "POST",
+  options: { signal?: AbortSignal } = {},
 ): Promise<T> {
-  if (isDemoActive()) return demoRequest(path, body, method) as T;
   const scope = cacheScope();
   const key = `${scope}:${path}`;
   const until = cooldowns.get(key) || 0;
@@ -134,12 +99,27 @@ export async function api<T>(
     );
   const mutation = body !== undefined;
   const request = async (signal: AbortSignal): Promise<T> => {
+    const deadline = AbortSignal.timeout(path === "/bootstrap" ? 12000 : 20000);
+    const tokenDeadline = AbortSignal.timeout(8000);
     let token: string | undefined;
     try {
+      startStage("identity_token");
       token = auth0Token
-        ? await auth0Token()
-        : await auth?.currentUser?.getIdToken();
+        ? await abortable(
+            auth0Token(),
+            AbortSignal.any([signal, deadline, tokenDeadline]),
+          )
+        : undefined;
+      finishStage("identity_token");
+      if (!token) throw new Error("Sign in required");
     } catch {
+      if (signal.aborted)
+        throw new DOMException("Obsolete request", "AbortError");
+      if (tokenDeadline.aborted || deadline.aborted)
+        throw new ApiError(
+          "Sign-in verification took too long. Please try again.",
+          503,
+        );
       throw new ApiError("Your session expired. Please sign in again.", 401);
     }
     if (scope !== cacheScope())
@@ -149,7 +129,7 @@ export async function api<T>(
         const response = await fetch(`/api${path}`, {
           method: mutation ? method : "GET",
           cache: "no-store",
-          signal: AbortSignal.any([signal, AbortSignal.timeout(20000)]),
+          signal: AbortSignal.any([signal, deadline]),
           headers: {
             "Content-Type": "application/json",
             "X-WalletWise": "1",
@@ -165,12 +145,20 @@ export async function api<T>(
           if (preview.code === "ONBOARDING_REQUIRED")
             window.dispatchEvent(new Event("walletwise:onboarding-required"));
         }
-        return (await readJson(response)) as T;
+        const result = await readJson(response);
+        if (scope !== cacheScope())
+          throw new DOMException("Account changed", "AbortError");
+        return result as T;
       } catch (error) {
         if (error instanceof ApiError && error.status === 429)
           cooldowns.set(key, Date.now() + error.retryAfter * 1000);
         if (signal.aborted) throw error;
-        if (!mutation && attempt === 0 && !(error instanceof ApiError))
+        if (
+          !mutation &&
+          attempt === 0 &&
+          !deadline.aborted &&
+          !(error instanceof ApiError)
+        )
           continue;
         if (error instanceof ApiError) throw error;
         throw new ApiError(
@@ -181,7 +169,14 @@ export async function api<T>(
     }
   };
   if (!mutation)
-    return privateRequests.get(key, path === "/state" ? stateTtl : 0, request);
+    return privateRequests.get(
+      key,
+      /^(?:\/state|\/bootstrap|\/dashboard|\/activity)/.test(path)
+        ? stateTtl
+        : 0,
+      request,
+      options.signal,
+    );
   // Never cache or retry writes. Invalidate reads on either side of every mutation.
   privateRequests.clear();
   try {

@@ -1,3 +1,4 @@
+import { profileBootstrap } from "../fixtures/loading";
 import { test, expect } from "@playwright/test";
 
 test("onboarding layout, validation and saved dashboard transition", async ({
@@ -16,13 +17,14 @@ test("onboarding layout, validation and saved dashboard transition", async ({
       window.__vite_plugin_react_preamble_installed__ = true;
       const { default: React } = await import('/node_modules/.vite/deps/react.js');
       const { default: { createRoot } } = await import('/node_modules/.vite/deps/react-dom_client.js');
+      const { setAuth0TokenProvider }=await import('/src/api.ts');setAuth0TokenProvider(async()=>"test-fixture-token");
       const { OnboardingBoundary } = await import('/src/Onboarding.tsx');
       await import('/src/styles.css');
       createRoot(document.getElementById('root')).render(React.createElement(OnboardingBoundary, { onSignOut: () => {} }, React.createElement('h1', null, 'Protected dashboard')));
     </script></body></html>`,
     });
   });
-  const profile = {
+  let profile:import("../../shared/types").OnboardingStatus = {
     complete: false,
     fullName: "Taylor Example",
     email: "taylor@example.com",
@@ -31,14 +33,18 @@ test("onboarding layout, validation and saved dashboard transition", async ({
     savings: "unseen",
     notifications: false,
   };
-  await page.route("**/api/onboarding", (route) =>
-    route.fulfill({
-      json:
-        route.request().method() === "PUT"
-          ? { ...profile, ...route.request().postDataJSON(), complete: true }
-          : profile,
-    }),
+  await page.route("**/api/bootstrap", (route) =>
+    route.fulfill({ json: profileBootstrap(profile) }),
   );
+  await page.route("**/api/onboarding", (route) => {
+    if (route.request().method() === "PUT")
+      profile = {
+        ...profile,
+        ...route.request().postDataJSON(),
+        complete: true,
+      };
+    return route.fulfill({ json: profile });
+  });
   await page.goto("/onboarding");
   await expect(page.getByLabel("Full name")).toHaveValue("Taylor Example");
   await expect(

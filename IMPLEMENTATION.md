@@ -1,73 +1,46 @@
-# Implementation and validation record
+# Dream Piggy Bank architecture
 
-The starting repository contained only `.gitignore`, `.gitattributes` and `LICENSE`. There was no framework, application, screenshot, authentication or existing behavior to migrate. Unrelated repository metadata was retained. The implementation stays in the requested checkout; no hosted site was published.
+## Request and identity boundary
 
-## Phase 1 — Foundation
+The browser starts with public configuration, then the existing Auth0 provider. Protected wallet UI renders only after authentication and onboarding. Email/password, registration, password reset, persistent sessions, logout and the Auth0 `paypal-sandbox` connection remain in place; Google is disabled. Auth0 subject strings remain opaque identities. Backend requests verify signatures, issuer, audience/client, expiry and the expected Supabase role claim using the existing verifier. No browser storage flag or URL argument grants access.
 
-Created `package.json`, lockfile, TypeScript/Vite/ESLint configuration, `index.html`, `src/main.tsx`, `src/App.tsx`, `src/ui.tsx`, `src/styles.css`, `src/api.ts`, `shared/types.ts`, `shared/money.ts`, `server/store.ts`, `server/ledger.ts`, `server/app.ts`, `server/index.ts` and `src/Wallet.tsx`. Modified `.gitignore` to exclude dependencies, secrets, runtime databases and generated test/build artifacts.
+Express rejects private requests without this verified identity, then requires Supabase, initializes the owned profile/wallets idempotently, and enforces onboarding, ownership, request origin, request header, input validation and rate limits. The public configuration endpoint and secret-protected cron endpoint do not disclose financial records. The former public development market endpoint is removed; authenticated sessions use the existing shared market polling and cache.
 
-Implemented the responsive six-page shell, isolated persistent demo sessions, optional Firebase authentication, server-owned balanced ledger, per-currency balances, purchases, filters, transaction details and full refunds. Monetary operations use integer minor units and fixed-point/BigInt conversions.
+## Persistence
 
-Validation: TypeScript passed. Subsequent unit/API tests cover exact precision, balanced allocations, insufficient funds, full refunds, concurrent duplicates and session isolation. UI and API tests run against actual local SQLite storage. Firebase credentials are absent, so external Firebase sign-in and Firestore transactions have not been exercised against a configured cloud project.
+Supabase PostgreSQL is authoritative for profiles, zero-initialized wallets, transactions, ledger postings, savings rules, reports and Forex history. `account_state` holds remaining private auxiliary records as JSON, keyed by server-derived UID with a unique Auth0 owner. Updates compare a version and retry conflicts to avoid overwriting concurrent changes. Existing verified users can import their owned legacy auxiliary records once; the original records are retained. Browser state is a view of backend data, never an authority for balances.
 
-## Phase 2 — Smart Savings
+Monetary SQL functions lock wallets, validate minor-unit precision, ownership, balanced postings and nonnegative balances, and commit postings and balances together. USD/ILS use two decimals; JOD uses three. Client roles have SELECT-only access under subject-scoped RLS. Service-role financial writes use narrowly granted security-definer RPCs. Migrations are additive; existing account records are not reset.
 
-Extended `server/ledger.ts`, `server/app.ts`, `src/App.tsx`, `src/Wallet.tsx` and shared models; created `src/Settings.tsx`.
+SQLite/Firestore remain only for shared provider caches, quotas and leases, and reading existing auxiliary records during migration. Firebase browser authentication and its unused browser SDK were removed; optional Firebase Admin remains for the Firestore cache. No private API falls back to a local wallet when Supabase is unavailable.
 
-Implemented persistent opt-in/opt-out, automatic future-purchase round-ups, currency-specific increments and caps, savings separated from available funds, named goals, selected per-currency destinations, progress, history and configurable settings. Canceling a purchase dialog creates no entry. A failed purchase never allocates savings. Refunds reverse original goal allocations.
+## Sandbox funding
 
-Validation: financial tests cover all requested ILS/USD/JOD examples, boundaries, small/large amounts, precision, zero/invalid amounts and caps. API/browser journeys cover opt-in and opt-out persistence, goal creation, purchases, settings and refunds.
+`src/Funding.tsx` is shared by Home and My Wallet. `/api/funding` is mounted behind the same authentication and private-operation controls, with a separate per-user rate limit. It reserves an owned `funding_orders` row before contacting PayPal, with a fingerprint, immutable amount/currency, stable provider request keys and unique provider order/capture IDs.
 
-## Phase 3 — Savings Advisor
+Server-only `server/paypal.ts` uses a fixed Sandbox host. `server/funding.ts` retrieves the canonical provider order and validates its merchant, custom ID, invoice ID, order ID, currency, exact minor-unit amount, full capture and completed statuses. Only then does a database RPC claim the unique capture and append a balanced available/external ledger transaction atomically. Repeated/concurrent callbacks return the original credit. A rolled-back database write leaves the durable order available for reconciliation without a second capture.
 
-Created `server/reports.ts`; extended report/recommendation models, APIs and UI.
+Provider pending, failed, canceled and uncertain attempts are visible in the existing activity view with zero postings. Completed credits and reversals use existing ledger transactions, mapped to Funds Added/reversal for display. These adjustments never trigger savings round-ups or become report spending. Full refunds are verified through the capture API before an idempotent reversal; partial refunds and insufficient funds enter review and block further protected mutations until resolved. Refund detection is user-driven reconciliation, not an automatic worker.
 
-Implemented deterministic weekly/monthly aggregates, category/currency breakdowns, previous-period eligibility, goal progress, replayed rule estimates, explicit Accept/Dismiss decisions, saved report downloads and optional server-side Gemini explanations. AI receives only limited aggregates, returns schema-validated JSON, and falls back to calculated summaries on timeout or invalid output.
+## Financial and market features
 
-Validation: replay calculation and preference non-mutation unit tests; Gemini outage/invalid-schema fixtures; API dismissal test and browser acceptance journey. Actual Gemini requests require a configured API key and enabled model. Reports are on demand, not automatically scheduled.
+Existing purchase, round-up, refund, savings allocation/withdrawal, goal, recommendation and conversion operations retain their SQL logic. Conversions require a fresh validated cached quote and sufficient funds, and commit atomically. Insufficient USD/ILS funds link to Add Funds. JOD has no direct funding route.
 
-## Phase 4 — Currency Intelligence
+The shared authenticated polling service still reads actual Forex observations from the configured provider, with cached refreshes, quota limits, timestamps and freshness. There is no fabricated normal-use market feed. Calculated and optional Gemini explanations remain available through the existing report and insight services; provider output does not control ledger amounts or grants.
 
-Created `server/rates.ts`, `src/Rates.tsx`, `scripts/check-pma.ts`; extended models, APIs and wallet conversion controls.
+## Verification boundaries
 
-Verified the public PMA embed, preserved its bid/ask labels, implemented explicit midpoints and inverse/cross-rates, stored retrieval timestamps, truthful empty/stale states, real-observation charts, server-side polling, per-user threshold alerts, read state, cooldowns, reference resets and watched-amount impact. Added server-verified conversion previews and atomic simulated exchanges.
+Tests keep fixture money and controlled authentication in `tests/`, injected only into Playwright routes owned by the test runner. Production builds exclude these modules and expose no fixture entry point. PGlite tests apply the actual migrations and exercise RLS, zero initialization, atomicity, duplicate capture claims, cross-owner rejection, refunds and rollback recovery. API tests independently verify provider receipts and authorization. External service eligibility still requires configured accounts and deployed migrations.
 
-Validation: provider parsing/failure fixtures, staleness, direction/precision, thresholds, suppression/deduplication, and API tests for altered quotes, exact balance updates and stale rejection. A live `npx tsx scripts/check-pma.ts` request successfully fetched USD/ILS and JOD/ILS from PMA and stored one genuine observation. The source does not supply publication timestamps or a documented JSON API. Cron deployment remains an operator configuration step.
+See [PAYPAL_FUNDING.md](PAYPAL_FUNDING.md), [AUTH0_SETUP.md](AUTH0_SETUP.md) and [FUNDING_IMPLEMENTATION_REPORT.md](FUNDING_IMPLEMENTATION_REPORT.md).
 
-## Phase 5 — PayPal Sandbox
 
-Created `server/paypal.ts`; extended account-scoped order APIs and the My Wallet Sandbox panel.
+## Progressive initialization
 
-Implemented server-side Sandbox OAuth, fixed USD 1.00 Orders checkout, approval/cancel return handling, capture reconciliation, stable request IDs, account ownership validation, exact capture verification and separate Sandbox references. No Sandbox event funds the simulated wallet. JOD stays simulation-only.
+Auth0's SDK remains responsible for session restoration, callback handling and renewal. The application uses valid current ID-token claims, shares concurrent renewal work, verifies the expected SDK subject, and never requests a custom API audience. The protected boundary checks the onboarding decision and essential wallet data with one authenticated bootstrap request. A request-local profile replaces repeated initialization/profile queries; reading existing auxiliary state no longer performs a write.
 
-Validation: completed/pending/declined responses, wrong order IDs and incorrect capture amounts tested with isolated fixtures. Live buyer approval/capture was not performed because no Sandbox credentials were supplied. No webhook endpoints are exposed.
+The bootstrap response contains verified per-currency balances and rules, with no transaction history or external provider request. Independent dashboard projections, cursor-paginated activity and the existing shared market feed load after the dashboard becomes usable. Dashboard spending and goal totals are calculated from the complete owned ledger in a service-only read function, preserving their existing semantics without transferring every transaction to the browser. Saved report pages load separately. The existing full state reader remains for explicit server report/insight calculations, with independent reads parallelized.
 
-## Phase 6 — Quality and handoff
+`server/diagnostics.ts` provides request cancellation and opt-in development timings. Database reads have an 8-second default deadline with SDK retry disabled; the frontend bounds bootstrap/token/network waits and ignores obsolete responses. Private caches remain in memory within an authentication generation and are invalidated after mutations or cleared on logout/account change. The new read functions and indexes live in `202610300003_progressive_loading.sql`; client mutation grants and financial RPCs are unchanged.
 
-Created financial/integration/API/component tests, Playwright journeys, responsive layout checks, `.env.example`, `firestore.rules`, `api/index.ts`, `vercel.json`, `.prettierignore`, `README.md` and this record. Split UI controls into domain modules and formatted source for maintainability. Updated dependencies and pinned the vulnerable transitive gRPC dependency to a patched compatible release.
-
-Executed validation:
-
-- TypeScript: passed.
-- ESLint: passed.
-- Vitest: 28 tests passed across financial, integration, API and component suites.
-- Playwright: 3 journeys passed, including every page at 1440px, 820px and 390px; no horizontal overflow or browser page errors.
-- Production Vite build: passed.
-- npm audit: zero vulnerabilities reported after dependency remediation.
-- Live PMA retrieval: passed.
-
-The initial E2E attempt could not launch because the required Chromium binary was absent; installing Playwright Chromium resolved it. A later cold-start run exposed a readiness race: Vite could serve the page before Express was listening. Playwright now waits for both services, and the client retries its read-only configuration request with useful connection errors. Visual screenshots were inspected; animation capture was disabled so mobile navigation screenshots represent settled layouts. Screenshots are generated in ignored `test-results/`.
-
-Remaining limitations and exact integration/deployment configuration are documented in README. Credentialed Firebase/Gemini/PayPal verification, hosted deployment, production-scale persistence and distributed rate limits are not claimed complete.
-
-## Follow-up completion pass
-
-Created `server/ai.ts`, `server/currency-insights.ts`, `tests/currency-insights.test.ts` and `tests/e2e/currency.spec.ts`. Updated the reports, API, store, shared models, currency/wallet UI, report UI and regression tests.
-
-- Added standalone currency explanations for a selected amount or the server-owned available balance. Conversion value, reference difference, percent change and historical range are computed deterministically; Gemini explains only those supplied facts. Single-observation, stale-data and offline-AI states remain explicit.
-- Added goal progress and server-calculated spending differences to reports. Zero previous spending has no percentage baseline.
-- Closed stale-recommendation acceptance after cap changes, disabled savings or new/refunded ledger activity. Recommendations remain subject to explicit approval and configured increment limits.
-- Prevented delayed conversion previews and currency analyses from overwriting edited inputs.
-- Moved SQLite's busy timeout before WAL initialization after the expanded parallel test suite exposed a startup lock race.
-
-Validation for this pass: **35 Vitest tests passed; 5 Playwright tests passed** (including the currency explanation and delayed-preview regressions). TypeScript, ESLint and production build passed. New browser currency fixtures are explicitly test-only and do not represent a live Gemini or PMA response. The external credential/deployment limitations above remain unchanged.
+Performance evidence and limits: [PERFORMANCE_REPORT.md](PERFORMANCE_REPORT.md).

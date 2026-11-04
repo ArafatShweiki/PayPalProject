@@ -1,6 +1,97 @@
+import { initialUser } from "../shared/ledger";
+import type { Profile } from "../server/supabase";
+const profiles = vi.hoisted(() => new Map<string, Profile>());
+vi.mock("../server/store", async (original) => {
+  const m = await original<typeof import("../server/store")>();
+  return {
+    ...m,
+    userRead: async (uid: string) =>
+      m.update(
+        `user_${uid}`,
+        () => initialUser(),
+        (v) => v,
+      ),
+    userUpdate: async (
+      uid: string,
+      fn: (v: ReturnType<typeof initialUser>) => unknown,
+    ) => m.update(`user_${uid}`, () => initialUser(), fn),
+  };
+});
+vi.mock("../server/supabase", async (original) => ({
+  ...(await original<typeof import("../server/supabase")>()),
+  supabaseEnabled: () => true,
+  initializeProfile: async (sub: string) => {
+    if (!profiles.has(sub))
+      profiles.set(sub, {
+        auth0_sub: sub,
+        full_name: null,
+        email: null,
+        email_verified: false,
+        preferred_currency: "ILS",
+        savings_enabled: null,
+        currency_notifications: false,
+        onboarding_completed_at: null,
+        wallet_preferences: {},
+      });
+    return profiles.get(sub);
+  },
+  readProfile: async (sub: string) => profiles.get(sub),
+  completeProfile: async (i: {
+    sub: string;
+    name: string;
+    email: string;
+    emailVerified: boolean;
+    preferred: "USD";
+    savings: boolean;
+    notifications: boolean;
+  }) => {
+    const p = profiles.get(i.sub)!;
+    if (!p.onboarding_completed_at)
+      Object.assign(p, {
+        full_name: i.name,
+        email: i.email,
+        email_verified: i.emailVerified,
+        preferred_currency: i.preferred,
+        savings_enabled: i.savings,
+        currency_notifications: i.notifications,
+        onboarding_completed_at: new Date().toISOString(),
+      });
+    return p;
+  },
+  getServerSupabase: () => ({
+    from: () => ({
+      select: () => ({
+        eq: () => ({ eq: () => ({ limit: async () => ({ data: [] }) }) }),
+      }),
+    }),
+  }),
+}));
+vi.mock("../server/database-state", () => ({
+  databaseState: async (sub: string, uid: string) => {
+    const { userRead } = await import("../server/store");
+    const data = await userRead(uid),
+      p = profiles.get(sub)!;
+    data.profile = {
+      fullName: p.full_name || "",
+      email: p.email || "",
+      emailVerified: p.email_verified,
+      completedAt: p.onboarding_completed_at || "",
+    };
+    Object.assign(data.preferences, {
+      name: p.full_name,
+      preferred: p.preferred_currency,
+      savings: p.savings_enabled ? "enabled" : "disabled",
+      notifications: p.currency_notifications,
+    });
+    return {
+      data,
+      walletBalances: { ILS: 0, USD: 0, JOD: 0 },
+      savingsBalances: { ILS: 0, USD: 0, JOD: 0 },
+    };
+  },
+}));
 import { beforeAll, afterAll, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
-import * as store from "../server/store";
 import type { Server } from "node:http";
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
 let localKeys: ReturnType<typeof createLocalJWKSet>;
@@ -18,6 +109,7 @@ let base: string;
 const subject = `auth0|${randomUUID()}`;
 beforeAll(async () => {
   vi.stubEnv("AUTH0_ENABLED", "true");
+  vi.stubEnv("SUPABASE_URL", "https://example.supabase.co");
   vi.stubEnv("AUTH0_DOMAIN", "example.auth0.com");
   vi.stubEnv("AUTH0_CLIENT_ID", "wallet-client");
   keys = await generateKeyPair("RS256");
@@ -144,7 +236,7 @@ it("rejects invalid data and client-supplied ownership or verification flags", a
 });
 it("does not complete onboarding when persistence fails", async () => {
   const failure = vi
-    .spyOn(store, "userUpdate")
+    .spyOn(await import("../server/supabase"), "completeProfile")
     .mockRejectedValueOnce(new Error("Storage unavailable"));
   expect((await request("/api/onboarding", profile)).status).toBe(503);
   failure.mockRestore();

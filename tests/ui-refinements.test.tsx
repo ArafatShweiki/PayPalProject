@@ -1,3 +1,4 @@
+import { fundedUser } from "./fixtures/user";
 // @vitest-environment jsdom
 import React from "react";
 import { afterEach, expect, it, vi } from "vitest";
@@ -8,7 +9,7 @@ import {
   screen,
   within,
 } from "@testing-library/react";
-import { initialUser, balances, purchase } from "../shared/ledger";
+import { balances, purchase } from "../shared/ledger";
 import { buildReport } from "../shared/reports";
 import type { State } from "../shared/types";
 import { SettingsForm } from "../src/Settings";
@@ -22,10 +23,14 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 function fixture(): State {
-  const d = initialUser(true);
+  const d = fundedUser();
   d.preferences.savings = "enabled";
   purchase(d, "ILS", 2340, "Coffee", "Food & drink");
-  const { report, recommendations } = buildReport(d, "weekly");
+  const { report, recommendations } = buildReport(
+    d,
+    "weekly",
+    Date.now() + 1000,
+  );
   return {
     ...d,
     reports: [report],
@@ -33,29 +38,89 @@ function fixture(): State {
     balances: balances(d),
     savingsBalances: balances(d, "savings"),
     snapshots: [],
-    authMode: "demo",
+    authMode: "auth0",
     capabilities: { firebase: false, paypal: false, gemini: false },
   };
 }
-it("keeps cap inputs accessible and saves currency precision without changing increments", () => {
+it("saves round-up increments with currency precision while preserving existing caps", () => {
   const state = fixture(),
     save = vi.fn(async () => true);
   render(<SettingsForm state={state} busy={false} save={save} />);
-  for (const c of ["ILS", "USD", "JOD"])
-    expect(
-      screen.getByLabelText(`${c} maximum automatic savings per purchase`),
-    ).toBeTruthy();
-  fireEvent.change(
-    screen.getByLabelText("JOD maximum automatic savings per purchase"),
-    { target: { value: "0.125" } },
-  );
+  expect(
+    screen.queryByText("Maximum automatic savings per purchase"),
+  ).toBeNull();
+  fireEvent.change(document.querySelector('input[name="increment-JOD"]')!, {
+    target: { value: "0.125" },
+  });
   fireEvent.click(screen.getByRole("button", { name: /Save preferences/ }));
   expect(save).toHaveBeenCalledWith(
     expect.objectContaining({
-      caps: { ...state.preferences.caps, JOD: 125 },
-      increments: state.preferences.increments,
+      caps: state.preferences.caps,
+      increments: { ...state.preferences.increments, JOD: 125 },
     }),
   );
+});
+it("synchronizes the savings checkbox with refreshed account preferences and saves the selected state", () => {
+  const state = fixture(),
+    save = vi.fn(async () => true);
+  const view = render(<SettingsForm state={state} busy={false} save={save} />);
+  const checkbox = () =>
+    screen.getByRole("checkbox", {
+      name: "Automatically allocate round-ups after successful simulated purchases",
+    }) as HTMLInputElement;
+  expect(checkbox().checked).toBe(true);
+  fireEvent.click(checkbox());
+  expect(checkbox().checked).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: /Save preferences/ }));
+  expect(save).toHaveBeenLastCalledWith(
+    expect.objectContaining({ savings: "disabled" }),
+  );
+  // A fresh authoritative snapshot can retain enabled (for example after a failed save).
+  view.rerender(
+    <SettingsForm
+      state={{ ...state, preferences: { ...state.preferences } }}
+      busy={false}
+      save={save}
+    />,
+  );
+  expect(checkbox().checked).toBe(true);
+  const disabled = {
+    ...state,
+    preferences: { ...state.preferences, savings: "disabled" as const },
+  };
+  view.rerender(<SettingsForm state={disabled} busy={false} save={save} />);
+  expect(checkbox().checked).toBe(false);
+  fireEvent.click(checkbox());
+  fireEvent.click(screen.getByRole("button", { name: /Save preferences/ }));
+  expect(save).toHaveBeenLastCalledWith(
+    expect.objectContaining({ savings: "enabled" }),
+  );
+  view.rerender(<SettingsForm state={state} busy={true} save={save} />);
+  expect(checkbox().checked).toBe(true);
+  expect(checkbox().disabled).toBe(true);
+});
+it("resynchronizes notification choices after an authoritative refresh", () => {
+  const state = fixture(),
+    save = vi.fn(async () => true);
+  state.preferences.notifications = true;
+  const view = render(<SettingsForm state={state} busy={false} save={save} />);
+  const checkbox = () =>
+    screen.getByLabelText(
+      "Enable in-app currency notifications",
+    ) as HTMLInputElement;
+  fireEvent.click(checkbox());
+  expect(checkbox().checked).toBe(false);
+  view.rerender(
+    <SettingsForm
+      state={{ ...state, preferences: { ...state.preferences } }}
+      busy={false}
+      save={save}
+    />,
+  );
+  expect(checkbox().checked).toBe(true);
+  expect(
+    screen.getByRole("option", { name: "Monthly (calendar month)" }),
+  ).toBeTruthy();
 });
 it("shows stale insights as recorded values without a current movement claim", async () => {
   const snapshot = {
@@ -107,7 +172,7 @@ it("keeps report currencies separate, omits missing comparisons and wires explic
     .getByRole("heading", { name: "ILS", level: 3 })
     .closest("article")!;
   expect(within(card).getByRole("heading", { name: "₪23.40" })).toBeTruthy();
-  expect(within(card).getByText("₪1.60")).toBeTruthy();
+  expect(within(card).getAllByText("₪1.60")).toBeTruthy();
   expect(screen.queryByText(/Previous period/)).toBeNull();
   expect(
     screen

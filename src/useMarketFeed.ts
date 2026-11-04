@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { ApiError } from "./errors";
 import type {
@@ -11,7 +11,7 @@ import type {
 export function useMarketFeed(
   mode: State["authMode"] | undefined,
   onData: (snapshots: Snapshot[], staleMs: number, notices?: Notice[]) => void,
-  demoMode?: State["demoMarketMode"],
+  version = 0,
 ) {
   const [status, setStatus] = useState<MarketStatus>();
   const callback = useRef(onData);
@@ -19,8 +19,9 @@ export function useMarketFeed(
     callback.current = onData;
   }, [onData]);
   useEffect(() => {
-    if (!mode || (mode === "demo" && demoMode !== "live")) return;
+    if (!mode) return;
     setStatus(undefined);
+    const controller = new AbortController();
     let active = true,
       timer: ReturnType<typeof setTimeout> | undefined,
       failures = 0,
@@ -35,7 +36,9 @@ export function useMarketFeed(
       running = true;
       let delay = 30000;
       try {
-        const feed = await api<MarketFeed>("/rates/live");
+        const feed = await api<MarketFeed>("/rates/live", undefined, "GET", {
+          signal: controller.signal,
+        });
         if (!active) return;
         failures = 0;
         setStatus(feed.status);
@@ -82,10 +85,11 @@ export function useMarketFeed(
     document.addEventListener("visibilitychange", resume);
     return () => {
       active = false;
+      controller.abort();
       clearTimeout(timer);
       window.removeEventListener("online", resume);
       document.removeEventListener("visibilitychange", resume);
     };
-  }, [mode, demoMode]);
+  }, [mode, version]);
   return status;
 }

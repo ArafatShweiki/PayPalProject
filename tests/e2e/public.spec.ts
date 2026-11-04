@@ -1,5 +1,5 @@
-﻿import { test, expect } from "@playwright/test";
-import { enterDemo, mountWalletFixture } from "./fixtures";
+import { test, expect } from "@playwright/test";
+import { enterTestWallet, mountWalletFixture } from "./fixtures";
 test("public information, searchable help, storage information and 404 work without login", async ({
   page,
 }) => {
@@ -57,16 +57,18 @@ test("public information, searchable help, storage information and 404 work with
     [],
   );
 });
-test("demo retains savings/rates and exposes storage preferences", async ({
+test("authenticated wallet retains savings/rates without storage preferences in Settings", async ({
   page,
 }) => {
-  await enterDemo(page);
+  await enterTestWallet(page);
   await page
     .getByRole("link", { name: "Help Center", exact: true })
     .first()
     .click();
   await expect(page.locator("main h1")).toHaveText("Help Center");
   await page.getByRole("link", { name: "Back to app" }).click();
+  await expect(page.getByRole("navigation")).toHaveCount(0);
+  await enterTestWallet(page);
   await expect(
     page.getByRole("heading", { name: "Spending activity" }),
   ).toBeVisible();
@@ -74,12 +76,7 @@ test("demo retains savings/rates and exposes storage preferences", async ({
     await page.getByRole("button", { name, exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Storage preferences" }),
-  ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Exit Demo Mode", exact: true })
-    .first()
-    .click();
-  await expect(page.getByRole("navigation")).toHaveCount(0);
+  ).toHaveCount(0);
 });
 test("delayed private data displays skeletons and an enforced 429 offers recovery", async ({
   page,
@@ -88,7 +85,7 @@ test("delayed private data displays skeletons and an enforced 429 offers recover
   const wait = new Promise<void>((r) => {
     release = r;
   });
-  await page.route("**/api/state", async (route) => {
+  await page.route("**/api/bootstrap", async (route) => {
     await wait;
     await route.fulfill({
       status: 429,
@@ -98,8 +95,8 @@ test("delayed private data displays skeletons and an enforced 429 offers recover
   });
   // Register the isolated mount fixture first, then override its state response.
   await mountWalletFixture(page, "Home");
-  await page.unroute("**/api/state");
-  await page.route("**/api/state", async (route) => {
+  await page.unroute("**/api/bootstrap");
+  await page.route("**/api/bootstrap", async (route) => {
     await wait;
     await route.fulfill({
       status: 429,

@@ -38,7 +38,7 @@ onboardingRouter.use((_req, res, next) => {
 });
 onboardingRouter.get("/", async (_req, res) => {
   if (supabaseEnabled()) {
-    const profile = await readProfile(res.locals.sub);
+    const profile = res.locals.profile ?? await readProfile(res.locals.sub);
     const result: OnboardingStatus = {
       complete: !!profile?.onboarding_completed_at,
       fullName: profile?.full_name || "",

@@ -30,7 +30,8 @@ class ErrorBoundary extends React.Component<
 const appPaths = ["/", "/onboarding", "/reset-password"];
 createRoot(document.getElementById("root")!).render(
   <ErrorBoundary>
-    {appPaths.includes(location.pathname) ? (
+    {appPaths.includes(location.pathname) ||
+    /^\/circles\/invite\/[A-Za-z0-9_-]{43}$/.test(location.pathname) ? (
       <AuthRoot />
     ) : (
       <Suspense

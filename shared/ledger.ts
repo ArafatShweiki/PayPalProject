@@ -33,11 +33,11 @@ export function append(data: UserData, entry: Entry) {
       );
     }
 }
-export function initialUser(demo = false): UserData {
+export function initialUser(): UserData {
   const data: UserData = {
     createdAt: new Date().toISOString(),
     preferences: {
-      name: "Alex",
+      name: "",
       preferred: "ILS",
       savings: "unseen",
       increments: { ILS: 500, USD: 100, JOD: 1000 },
@@ -52,32 +52,11 @@ export function initialUser(demo = false): UserData {
     notices: [],
     reports: [],
     recommendations: [],
-    sandbox: [],
     operations: {},
   };
-  if (!demo) {
-    data.preferences.name = "";
-    return data;
-  }
-  for (const c of currencies) {
-    const amount = { ILS: 650000, USD: 120000, JOD: 450000 }[c];
-    append(data, {
-      id: randomUUID(),
-      at: data.createdAt,
-      kind: "opening",
-      currency: c,
-      amount,
-      saved: 0,
-      description: "Simulated opening balance",
-      category: "Opening",
-      postings: [
-        { currency: c, account: "available", amount },
-        { currency: c, account: "external", amount: -amount },
-      ],
-    });
-  }
   return data;
 }
+
 export function purchase(
   data: UserData,
   currency: Currency,
@@ -90,13 +69,22 @@ export function purchase(
       "Purchase amount must be a positive integer in minor units.",
     );
   const saved =
-    data.preferences.savings === "enabled"
+    data.preferences.savings === "enabled" &&
+    data.savingsRuleEnabled?.[currency] !== false
       ? roundUp(
           amount,
           data.preferences.increments[currency],
           data.preferences.caps[currency],
         )
       : 0;
+  const selected = data.preferences.goalIds[currency];
+  const goal = data.goals.find(
+    (g) =>
+      g.id === selected &&
+      g.currency === currency &&
+      !g.archived &&
+      goalSaved(data, g.id) < g.target,
+  );
   const entry: Entry = {
     id: randomUUID(),
     at: new Date().toISOString(),
@@ -106,7 +94,12 @@ export function purchase(
     saved,
     description,
     category,
-    goalId: data.preferences.goalIds[currency],
+    ...(saved > 0
+      ? {
+          goalId: goal?.id,
+          savingsDestination: goal?.id ?? `general:${currency}`,
+        }
+      : {}),
     postings: [
       { currency, account: "available", amount: -amount - saved },
       { currency, account: "external", amount },
@@ -114,6 +107,8 @@ export function purchase(
     ],
   };
   append(data, entry);
+  if (!goal || goalSaved(data, goal.id) >= goal.target)
+    delete data.preferences.goalIds[currency];
   return entry;
 }
 export function refund(data: UserData, id: string) {
@@ -136,7 +131,26 @@ export function refund(data: UserData, id: string) {
 export function goalSaved(data: UserData, id: string): number {
   return data.ledger
     .filter((e) => e.goalId === id)
-    .reduce((s, e) => s + (e.kind === "refund" ? -e.saved : e.saved), 0);
+    .reduce(
+      (s, e) =>
+        s +
+        (e.allocationDelta ??
+          e.postings
+            .filter((p) => p.account === "savings")
+            .reduce((sum, p) => sum + p.amount, 0)),
+      0,
+    );
+}
+export function generalSavings(data: UserData): Balances {
+  const result = emptyBalances();
+  for (const entry of data.ledger) {
+    if (entry.allocationDelta) result[entry.currency] -= entry.allocationDelta;
+    if (!entry.goalId)
+      for (const posting of entry.postings)
+        if (posting.account === "savings")
+          result[posting.currency] += posting.amount;
+  }
+  return result;
 }
 export function idempotent<T>(
   data: UserData,

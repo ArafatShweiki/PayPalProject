@@ -1,9 +1,11 @@
 import { forexEnabled, forexPollMs } from "./forex";
+import { diagnoseFundingConfiguration } from "./funding";
 import { setting } from "./reliability";
 import { app } from "./app";
 import { refreshRates } from "./rates";
 import express from "express";
 import { resolve } from "node:path";
+diagnoseFundingConfiguration();
 if (process.env.NODE_ENV === "production") {
   app.use(express.static(resolve("dist")));
   app.get("/{*path}", (_req, res) => res.sendFile(resolve("dist/index.html")));

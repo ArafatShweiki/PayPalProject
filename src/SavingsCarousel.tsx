@@ -27,16 +27,34 @@ export function SavingsCarousel({
   busy,
   onCreate,
   onDestination,
+  onClearDefault,
+  onArchive,
+  selectedGoalId,
+  onInspect,
 }: {
   state: State;
   busy: boolean;
   onCreate: () => void;
   onDestination: (goal: Goal) => void;
+  onClearDefault?: (goal: Goal) => void;
+  onArchive?: (goal: Goal) => void;
+  selectedGoalId?: string;
+  onInspect?: (id: string) => void;
 }) {
-  const [selected, setSelected] = useState(
-    state.preferences.goalIds[state.preferences.preferred] ??
+  const [selected, setLocalSelected] = useState(
+    selectedGoalId ??
+      (state.preferences.savingsDestination?.kind === "goal"
+        ? state.preferences.savingsDestination.id
+        : undefined) ??
       state.goals[0]?.id,
   );
+  useEffect(() => {
+    if (selectedGoalId) setLocalSelected(selectedGoalId);
+  }, [selectedGoalId]);
+  const setSelected = (id: string) => {
+    setLocalSelected(id);
+    onInspect?.(id);
+  };
   const rail = useRef<HTMLDivElement>(null);
   const touchScroll = useRef(false);
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
@@ -48,6 +66,30 @@ export function SavingsCarousel({
   );
   const goal = state.goals.find((g) => g.id === selected) ?? state.goals[0];
   const index = goal ? state.goals.indexOf(goal) : 0;
+  const currentIndex = useRef(index);
+  currentIndex.current = index;
+  useEffect(() => {
+    const container = rail.current;
+    if (!container) return;
+    const align = () => {
+      const card = container.querySelector<HTMLElement>(
+        `[data-goal-index="${currentIndex.current}"]`,
+      );
+      if (card)
+        container.scrollTo({
+          left:
+            card.offsetLeft -
+            container.offsetLeft -
+            (container.clientWidth - card.offsetWidth) / 2,
+          behavior: "instant",
+        });
+    };
+    align();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(align);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [index]);
   const select = (i: number) => {
     const next = state.goals[(i + state.goals.length) % state.goals.length];
     if (!next) return;
@@ -70,12 +112,17 @@ export function SavingsCarousel({
   if (!goal)
     return (
       <div className="carousel-empty">
-        <Empty>Create a goal and give your next round-up a purpose.</Empty>
+        <Empty>No savings goals yet.</Empty>
         <Button onClick={onCreate}>Create goal</Button>
       </div>
     );
   const saved = goalAmount(state, goal.id);
-  const active = state.preferences.goalIds[goal.currency] === goal.id;
+  const eligible = !goal.archived && saved < goal.target;
+  const active =
+    eligible &&
+    state.preferences.savings === "enabled" &&
+    state.preferences.savingsDestination?.kind === "goal" &&
+    state.preferences.savingsDestination.id === goal.id;
   const Icon = goalIcon(goal);
   return (
     <section
@@ -279,9 +326,15 @@ export function SavingsCarousel({
             <span className="eyebrow">SELECTED GOAL · {goal.currency}</span>
             <h3>{goal.name}</h3>
           </div>
-          <span className={active ? "pill green" : "pill"}>
-            {active ? "Selected destination" : "Not a round-up destination"}
-          </span>
+          {(active || goal.archived || saved >= goal.target) && (
+            <span className={active ? "pill green" : "pill"}>
+              {active
+                ? "Default goal"
+                : goal.archived
+                  ? "Archived"
+                  : "Completed"}
+            </span>
+          )}
         </div>
         <div className="goal-details-stats">
           <div>
@@ -314,13 +367,36 @@ export function SavingsCarousel({
             {goal.targetDate
               ? ` · Target ${date(goal.targetDate)}`
               : " · No target date"}
-            <br />
-            Future {goal.currency} round-ups follow your selected destination.
           </small>
-          {!active && (
+          {eligible && !active && (
             <Button disabled={busy} onClick={() => onDestination(goal)}>
-              Select goal
+              {busy ? "Saving…" : "Set as default savings goal"}
             </Button>
+          )}
+          {(eligible || (!goal.archived && onArchive)) && (
+            <details className="goal-menu">
+              <summary>Goal options</summary>
+              <div className="actions">
+                {active && onClearDefault && (
+                  <Button
+                    secondary
+                    disabled={busy}
+                    onClick={() => onClearDefault(goal)}
+                  >
+                    Pause Smart Savings
+                  </Button>
+                )}
+                {!goal.archived && onArchive && (
+                  <Button
+                    secondary
+                    disabled={busy}
+                    onClick={() => onArchive(goal)}
+                  >
+                    Archive goal
+                  </Button>
+                )}
+              </div>
+            </details>
           )}
         </div>
       </div>

@@ -1,8 +1,10 @@
+import { startStage, finishStage } from "./performance";
 import { CardSkeleton } from "./Skeleton";
 import { useEffect, useState, type ReactNode } from "react";
 import { ArrowRight, ShieldCheck, Wallet } from "lucide-react";
-import type { OnboardingStatus } from "../shared/types";
+import type { OnboardingStatus, Bootstrap, State } from "../shared/types";
 import { api } from "./api";
+import { ApiError } from "./errors";
 import { Button } from "./ui";
 
 export function OnboardingForm({
@@ -165,33 +167,62 @@ export function OnboardingBoundary({
   children,
   onSignOut,
 }: {
-  children: ReactNode;
+  children: ReactNode | ((state: State) => ReactNode);
   onSignOut: () => void;
 }) {
   const [profile, setProfile] = useState<OnboardingStatus>();
+  const [initial, setInitial] = useState<State>();
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [saved, setSaved] = useState(false);
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     setError("");
     setProfile(undefined);
-    void api<OnboardingStatus>("/onboarding")
-      .then((result) => {
+    startStage("profile_bootstrap");
+    startStage("wallet_essential");
+    void api<Bootstrap>("/bootstrap", undefined, "GET", {
+      signal: controller.signal,
+    })
+      .then((loaded) => {
         if (!active) return;
-        if (!result.complete) history.replaceState({}, "", "/onboarding");
-        else if (location.pathname === "/onboarding")
-          history.replaceState({}, "", "/#Home");
+        const result = loaded.onboarding;
+        if (result.complete && !loaded.state)
+          throw new Error("Wallet information missing");
+        setInitial(loaded.state);
+        finishStage("profile_bootstrap");
+        finishStage("wallet_essential");
+        if (!result.complete) {
+          if (/^\/circles\/invite\/[A-Za-z0-9_-]{43}$/.test(location.pathname))
+            sessionStorage.setItem(
+              "walletwise:circle-invite",
+              location.pathname,
+            );
+          history.replaceState({}, "", "/onboarding");
+        } else if (location.pathname === "/onboarding")
+          history.replaceState(
+            {},
+            "",
+            /^\/circles\/invite\/[A-Za-z0-9_-]{43}$/.test(
+              sessionStorage.getItem("walletwise:circle-invite") || "",
+            )
+              ? sessionStorage.getItem("walletwise:circle-invite")!
+              : "/#Home",
+          );
         setProfile(result);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (active)
           setError(
-            "We couldn’t load your profile. Please retry or sign in again.",
+            error instanceof ApiError
+              ? error.message
+              : "We couldn’t load your profile. Please try again.",
           );
       });
     return () => {
       active = false;
+      controller.abort();
     };
   }, [attempt]);
   useEffect(() => {
@@ -203,7 +234,15 @@ export function OnboardingBoundary({
       if (profile && !profile.complete)
         history.replaceState({}, "", "/onboarding");
       else if (profile?.complete && location.pathname === "/onboarding")
-        history.replaceState({}, "", "/#Home");
+        history.replaceState(
+          {},
+          "",
+          /^\/circles\/invite\/[A-Za-z0-9_-]{43}$/.test(
+            sessionStorage.getItem("walletwise:circle-invite") || "",
+          )
+            ? sessionStorage.getItem("walletwise:circle-invite")!
+            : "/#Home",
+        );
     };
     window.addEventListener("walletwise:onboarding-required", recheck);
     window.addEventListener("popstate", enforceRoute);
@@ -222,7 +261,7 @@ export function OnboardingBoundary({
             Your profile is ready. Welcome to Dream Piggy Bank.
           </p>
         )}
-        {children}
+        {typeof children === "function" ? children(initial!) : children}
       </>
     );
   return (
@@ -257,10 +296,19 @@ export function OnboardingBoundary({
         ) : (
           <OnboardingForm
             initial={profile}
-            complete={(result) => {
-              history.replaceState({}, "", "/#Home");
+            complete={() => {
+              history.replaceState(
+                {},
+                "",
+                /^\/circles\/invite\/[A-Za-z0-9_-]{43}$/.test(
+                  sessionStorage.getItem("walletwise:circle-invite") || "",
+                )
+                  ? sessionStorage.getItem("walletwise:circle-invite")!
+                  : "/#Home",
+              );
               setSaved(true);
-              setProfile(result);
+              setProfile(undefined);
+              setAttempt((value) => value + 1);
             }}
           />
         )}

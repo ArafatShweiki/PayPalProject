@@ -162,6 +162,19 @@ a {
 }
 .sidebar-bottom {
   margin-top: auto;
+  flex-shrink: 0;
+}
+.sidebar-navigation {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.workspace-links,
+.sidebar > .brand,
+.sidebar > .nav-label {
+  flex-shrink: 0;
 }
 .profile {
   display: flex;
@@ -231,24 +244,6 @@ a {
 .breadcrumb strong {
   color: #465e72;
   font-weight: 500;
-}
-.demo-pill {
-  font-size: 10px;
-  padding: 6px 11px;
-  background: #f7f8fa;
-  border: 1px solid #e6ebf0;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-right: 10px;
-  color: #667b8b;
-}
-.demo-pill > span {
-  height: 5px;
-  width: 5px;
-  background: #c29e59;
-  border-radius: 50%;
 }
 .icon-button {
   border: 0;
@@ -795,6 +790,112 @@ footer span:first-child {
 .panel-head .actions {
   margin-top: 0;
 }
+.wallet-funding {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.wallet-funding > .currency-grid,
+.wallet-funding > .actions {
+  margin: 0;
+}
+.checkbox-label {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+.checkbox-label input {
+  width: 16px;
+  min-height: 16px;
+  margin: 0;
+}
+.goal-menu {
+  padding: 0;
+  border: 0;
+}
+.goal-menu summary {
+  text-align: right;
+}
+.goal-menu .actions {
+  justify-content: flex-end;
+}
+.circle-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 18px;
+}
+.circle-navigation {
+  margin: 0 0 18px;
+}
+.circle-card {
+  text-align: left;
+  padding: 22px;
+  border: 1px solid #e2e8ee;
+  border-radius: 9px;
+  background: #f6f9fc;
+  color: inherit;
+}
+.circle-card h3,
+.circle-overview h2,
+.circle-proposal h3 {
+  margin: 12px 0;
+}
+.circle-card p,
+.circle-overview > p,
+.savings-setup > p,
+.circle-invitation p {
+  margin: 12px 0;
+  line-height: 1.7;
+}
+.circle-card progress,
+.circle-proposal progress,
+.circle-member progress {
+  display: block;
+  width: 100%;
+  margin: 12px 0;
+}
+.circle-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  align-items: center;
+  margin-bottom: 20px;
+}
+.circle-metrics strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 20px;
+}
+.circle-member,
+.circle-proposal {
+  padding: 18px 0;
+  border-bottom: 1px solid #e2e8ee;
+}
+.circle-member > span {
+  display: inline-block;
+  margin-right: 20px;
+}
+.circle-proposal dl {
+  margin: 18px 0;
+}
+.circle-proposal ul {
+  padding-left: 20px;
+  line-height: 1.8;
+}
+.circle-invitation {
+  max-width: 720px;
+  margin: 28px auto;
+}
+textarea {
+  width: 100%;
+  min-height: 85px;
+  resize: vertical;
+  color: inherit;
+  font: inherit;
+  padding: 10px 12px;
+  border: 1px solid #dce4eb;
+  border-radius: 6px;
+}
 label {
   display: flex;
   flex-direction: column;
@@ -1334,11 +1435,6 @@ dd {
     font-size: 11px;
     gap: 7px;
   }
-  .demo-pill {
-    font-size: 9px;
-    margin-right: 0;
-    padding: 5px 7px;
-  }
   .topbar .row {
     gap: 6px;
   }
@@ -1715,12 +1811,6 @@ dd {
   }
 }
 
-.demo-entry {
-  margin-top: 1.5rem;
-}
-.demo-entry .button {
-  width: 100%;
-}
 /* Dashboard: a shared four-track grid keeps large and small tiles aligned. */
 .bento-grid {
   display: grid;
@@ -2597,6 +2687,14 @@ body:has(.app-shell) .info-footer {
   height: 34px;
   width: 34px;
   flex-shrink: 0;
+}
+.deferred-content {
+  width: 100%;
+}
+.deferred-content > .card-skeleton {
+  border: 0;
+  padding: 0;
+  background: transparent;
 }
 .skeleton-profile {
   min-height: 265px;

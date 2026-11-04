@@ -1,4 +1,4 @@
-﻿import { test, expect } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import { mountWalletFixture } from "./fixtures";
 import type { Snapshot } from "../../shared/types";
 const snapshot = (rate: number, stamp: number, id: string): Snapshot => ({

@@ -1,5 +1,6 @@
 import { validateSupabaseConfiguration } from "./configuration";
 import { databaseError } from "./database-errors";
+import { requestSignal, timed } from "./diagnostics";
 import type { Preferences, Recommendation } from "../shared/types";
 import "./env";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -19,6 +20,26 @@ export function supabaseEnabled() {
 export function getServerSupabase(): SupabaseClient {
   if (!enabled) throw new Error("Supabase integration is disabled.");
   return (client ??= createClient(url, secret, {
+    // One bounded database attempt. The API owns safe retries and idempotency;
+    // SDK retries otherwise multiply timeouts underneath the request deadline.
+    db: { retry: false },
+    global: {
+      fetch: (input, init) => {
+        const timeout = Math.max(
+          1000,
+          Math.min(
+            15000,
+            Number(process.env.SUPABASE_REQUEST_TIMEOUT_MS) || 8000,
+          ),
+        );
+        const signals = [
+          AbortSignal.timeout(timeout),
+          init?.signal,
+          requestSignal(),
+        ].filter((s): s is AbortSignal => !!s);
+        return fetch(input, { ...init, signal: AbortSignal.any(signals) });
+      },
+    },
     auth: {
       persistSession: false,
       autoRefreshToken: false,
@@ -46,11 +67,15 @@ export async function initializeProfile(sub: string): Promise<Profile> {
   return data as Profile;
 }
 export async function readProfile(sub: string): Promise<Profile | null> {
-  const { data, error } = await getServerSupabase()
-    .from("profiles")
-    .select("*")
-    .eq("auth0_sub", sub)
-    .maybeSingle();
+  const { data, error } = await timed("db_profile", () =>
+    getServerSupabase()
+      .from("profiles")
+      .select(
+        "auth0_sub,email,email_verified,full_name,preferred_currency,savings_enabled,currency_notifications,onboarding_completed_at,wallet_preferences",
+      )
+      .eq("auth0_sub", sub)
+      .maybeSingle(),
+  );
   if (error) throw databaseError(error);
   return data as Profile | null;
 }
@@ -93,10 +118,12 @@ export async function updateProfilePreferences(
   return data as Profile;
 }
 export async function readSavingsRules(sub: string) {
-  const { data, error } = await getServerSupabase()
-    .from("savings_rules")
-    .select("currency,enabled,increment_minor,cap_minor")
-    .eq("auth0_sub", sub);
+  const { data, error } = await timed("db_rules", () =>
+    getServerSupabase()
+      .from("savings_rules")
+      .select("currency,enabled,increment_minor,cap_minor")
+      .eq("auth0_sub", sub),
+  );
   if (error) throw databaseError(error);
   return data || [];
 }
@@ -147,16 +174,18 @@ export async function applyLedgerTransaction(input: {
   return data;
 }
 export async function readWallets(sub: string) {
-  const { data, error } = await getServerSupabase()
-    .from("wallets")
-    .select("currency,available_minor,savings_minor")
-    .eq("auth0_sub", sub);
+  const { data, error } = await timed("db_wallets", () =>
+    getServerSupabase()
+      .from("wallets")
+      .select("currency,available_minor,savings_minor")
+      .eq("auth0_sub", sub),
+  );
   if (error) throw databaseError(error);
   return data || [];
 }
 export type StoredTransaction = {
   id: string;
-  kind: "opening" | "purchase" | "refund" | "conversion";
+  kind: "opening" | "purchase" | "refund" | "conversion" | "adjustment";
   description: string;
   category: string;
   occurred_at: string;
@@ -179,7 +208,7 @@ export async function readTransactions(
         "id,kind,description,category,occurred_at,metadata,ledger_entries(currency,account,amount_minor)",
       )
       .eq("auth0_sub", sub)
-      .in("kind", ["opening", "purchase", "refund", "conversion"])
+      .in("kind", ["opening", "purchase", "refund", "conversion", "adjustment"])
       .order("occurred_at", { ascending: true })
       .order("id", { ascending: true })
       .range(offset, offset + pageSize - 1);

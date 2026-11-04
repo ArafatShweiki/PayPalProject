@@ -1,8 +1,18 @@
+import { Circles, Invitation } from "./Circles";
+import {
+  SavingsSetup,
+  HistoricalSavings,
+  SavingsDestinationPanel,
+} from "./SavingsSetup";
+import { GoalPurchase } from "./GoalPurchase";
+import type { SavingsDestination, SavingsOptions } from "../shared/circles";
+import { useWalletData } from "./useWalletData";
+import { DeferredSection } from "./DeferredSection";
+import { Funding } from "./Funding";
 import { ReportSummary } from "./ReportSummary";
 import { useMarketFeed } from "./useMarketFeed";
 import { MarketRatesPanel, MarketHistory } from "./MarketRates";
 import { PageSkeleton, CardSkeleton } from "./Skeleton";
-import { StoragePreferences } from "./InfoNavigation";
 import { ErrorState } from "./ErrorState";
 import { ApiError, userFacingMessage } from "./errors";
 import { useEffect, useState, useRef, type ReactNode } from "react";
@@ -23,29 +33,29 @@ import {
   SlidersHorizontal,
   Wallet,
   X,
+  Users,
   ChartNoAxesCombined,
 } from "lucide-react";
-import { api, initAuth, login, logout } from "./api";
+import { api, logout } from "./api";
 import { currencies, money, type Currency } from "../shared/money";
 import type { State, Entry, Preferences, Report } from "../shared/types";
-import { Button, Empty, Modal, PanelHead, Integration, time } from "./ui";
+import { Button, Empty, Modal, PanelHead, time } from "./ui";
 import {
   Transactions,
   Activity,
-  PurchaseForm,
   GoalForm,
   TransactionDetails,
   Conversion,
-  Sandbox,
 } from "./Wallet";
 import { Dashboard } from "./Dashboard";
 import { SavingsCarousel } from "./SavingsCarousel";
 import { Alerts, CurrencyPerspective } from "./Rates";
-import { SettingsForm, AuthForm, ReportArchive } from "./Settings";
+import { SettingsForm, ReportArchive } from "./Settings";
 const pages = [
   "Home",
   "My Wallet",
   "Smart Savings",
+  "Savings Circles",
   "Currency Rates",
   "Reports",
   "Settings",
@@ -65,6 +75,7 @@ const icons = [
   Home,
   Wallet,
   Leaf,
+  Users,
   ArrowLeftRight,
   ChartNoAxesCombined,
   Settings,
@@ -78,20 +89,105 @@ const symbols = { ILS: "₪", USD: "$", JOD: "JD" };
 export function App({
   accountPanel,
   onSignOut,
-}: { accountPanel?: ReactNode; onSignOut?: () => void } = {}) {
-  const [state, setState] = useState<State>();
+  initial,
+}: {
+  initial?: State;
+  accountPanel?: ReactNode;
+  onSignOut?: () => void;
+} = {}) {
   const [page, setPage] = useState<Page>(() => pageFromHash(location.hash));
+  const {
+    state,
+    setState,
+    refresh,
+    essentialError,
+    sections,
+    retrySection,
+    loadMore,
+    hasMore,
+    moreLoading,
+    setActivityFilter,
+  } = useWalletData(initial, page);
   const [error, setError] = useState("");
   const [requestError, setRequestError] = useState<unknown>();
   const [notice, setNotice] = useState("");
+  const [inspectedGoalId, setInspectedGoalId] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [reportLoading, setReportLoading] = useState(false);
+  const [reportDate, setReportDate] = useState("");
+  const reportRequest = useRef(false);
   const [mobile, setMobile] = useState(false);
   const [modal, setModal] = useState<
-    "purchase" | "goal" | "notifications" | "auth" | Entry | null
+    | "purchase"
+    | "goal"
+    | "notifications"
+    | "funding"
+    | "savings-setup"
+    | Entry
+    | null
   >(null);
+  const [pendingPreferences, setPendingPreferences] =
+    useState<Partial<Preferences>>();
+  const setupOffered = useRef(false);
+  const destinationRequest = useRef(false);
+  const destinationSaved = (destination: SavingsDestination) => {
+    if (destination.kind === "goal") setInspectedGoalId(destination.id);
+    setState((current) =>
+      current
+        ? {
+            ...current,
+            preferences: {
+              ...current.preferences,
+              savings: "enabled",
+              savingsDestination: destination,
+            },
+          }
+        : current,
+    );
+  };
+  async function saveDestination(
+    destination: Pick<SavingsDestination, "kind" | "id">,
+  ) {
+    if (destinationRequest.current) return;
+    destinationRequest.current = true;
+    try {
+      await run(async () => {
+        const saved = await api<SavingsDestination>(
+          "/savings/destination",
+          { ...destination, enable: true },
+          "PUT",
+        );
+        destinationSaved(saved);
+      }, "Smart Savings destination updated.");
+    } finally {
+      destinationRequest.current = false;
+    }
+  }
+  const [invitationOpen, setInvitationOpen] = useState(
+    /^\/circles\/invite\/[A-Za-z0-9_-]{43}$/.test(location.pathname),
+  );
   const [authReady, setAuthReady] = useState(false);
-  const [firebase, setFirebase] = useState(false);
+  const [marketVersion, setMarketVersion] = useState(0);
+  useEffect(() => {
+    if (
+      !setupOffered.current &&
+      state?.preferences.savings === "enabled" &&
+      !state.preferences.savingsDestination &&
+      !invitationOpen &&
+      modal === null &&
+      ["Home", "Smart Savings", "My Wallet"].includes(page)
+    ) {
+      setupOffered.current = true;
+      setPendingPreferences({ savings: "enabled" });
+      setModal("savings-setup");
+    }
+  }, [
+    state?.preferences.savings,
+    state?.preferences.savingsDestination,
+    invitationOpen,
+    page,
+    modal,
+  ]);
   const marketStatus = useMarketFeed(
     state?.authMode,
     (snapshots, staleMs, notices) =>
@@ -105,21 +201,10 @@ export function App({
             }
           : current,
       ),
-    state?.demoMarketMode,
+    marketVersion,
   );
-  const refresh = async () => setState(await api<State>("/state"));
   useEffect(() => {
-    void initAuth()
-      .then(async (enabled) => {
-        setFirebase(enabled);
-        setAuthReady(true);
-        await refresh();
-      })
-      .catch((e) => {
-        setAuthReady(true);
-        setError(userFacingMessage(e.message));
-        setRequestError(e);
-      });
+    setAuthReady(true);
     const hash = () => {
       setPage(pageFromHash(location.hash));
     };
@@ -134,6 +219,18 @@ export function App({
       window.removeEventListener("focus", revalidate);
     };
   }, []);
+  useEffect(() => {
+    if (essentialError) {
+      setError(
+        userFacingMessage(
+          essentialError instanceof Error
+            ? essentialError.message
+            : "Unable to load your wallet.",
+        ),
+      );
+      setRequestError(essentialError);
+    }
+  }, [essentialError]);
   const go = (p: Page) => {
     setPage(p);
     location.hash = p;
@@ -161,19 +258,91 @@ export function App({
       setBusy(false);
     }
   }
+  const [reportsMoreLoading, setReportsMoreLoading] = useState(false);
+  const [reportsMoreError, setReportsMoreError] = useState(false);
+  const reportsRequest = useRef<AbortController | undefined>(undefined);
+  useEffect(() => () => reportsRequest.current?.abort(), []);
+  async function loadMoreReports() {
+    if (!state || reportsMoreLoading) return;
+    const controller = new AbortController();
+    reportsRequest.current = controller;
+    setReportsMoreLoading(true);
+    setReportsMoreError(false);
+    try {
+      const page = await api<{ reports: Report[]; total: number }>(
+        `/account/reports?offset=${state.reports.length}`,
+        undefined,
+        "GET",
+        { signal: controller.signal },
+      );
+      setState((current) =>
+        current
+          ? {
+              ...current,
+              reports: [
+                ...new Map(
+                  [...current.reports, ...page.reports].map((r) => [r.id, r]),
+                ).values(),
+              ],
+              reportTotal: page.total,
+            }
+          : current,
+      );
+    } catch {
+      if (!controller.signal.aborted) setReportsMoreError(true);
+    } finally {
+      if (!controller.signal.aborted) setReportsMoreLoading(false);
+    }
+  }
   async function generateReport() {
+    if (reportRequest.current) return;
+    reportRequest.current = true;
     setReportLoading(true);
     try {
       await run(
-        () => api("/reports", { frequency: state!.preferences.frequency }),
-        "Report generated.",
+        () =>
+          api("/reports", {
+            frequency: state!.preferences.frequency,
+            ...(reportDate ? { date: reportDate } : {}),
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+          }),
+        "Report saved.",
       );
     } finally {
       setReportLoading(false);
+      reportRequest.current = false;
     }
   }
-  const prefs = (update: Partial<Preferences>) =>
-    run(() => api("/preferences", update, "PUT"), "Preferences updated.");
+  const prefs = async (update: Partial<Preferences>) => {
+    if (update.savings === "enabled") {
+      try {
+        const choices = await api<SavingsOptions>(
+          "/savings/options",
+          undefined,
+          "GET",
+        );
+        if (
+          state?.preferences.savings !== "enabled" ||
+          !choices.options.some(
+            (o) =>
+              o.kind === choices.destination?.kind &&
+              o.id === choices.destination?.id,
+          )
+        ) {
+          setPendingPreferences(update);
+          setModal("savings-setup");
+          return false;
+        }
+      } catch (e) {
+        setError((e as Error).message);
+        return false;
+      }
+    }
+    return run(
+      () => api("/preferences", update, "PUT"),
+      "Preferences updated.",
+    );
+  };
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => setNotice(""), 5000);
@@ -181,24 +350,33 @@ export function App({
   }, [notice]);
   const paypalHandled = useRef(false);
   useEffect(() => {
-    if (!state || state.authMode === "demo" || paypalHandled.current) return;
+    if (!state || paypalHandled.current) return;
     const params = new URLSearchParams(location.search);
-    const status = params.get("paypal");
-    const token = params.get("token");
-    if (status && token) {
+    const status = params.get("funding"),
+      id = params.get("fundingId");
+    if (status && id) {
       paypalHandled.current = true;
-      void run(
-        () =>
-          api(
-            `/paypal/${encodeURIComponent(token)}/${status === "approved" ? "capture" : "cancel"}`,
+      if (/^[0-9a-f-]{36}$/i.test(id)) {
+        let resultStatus = "";
+        void run(async () => {
+          const order = await api<{ status: string }>(
+            `/funding/${id}/${status === "approved" ? "capture" : "cancel"}`,
             {},
-          ),
-        "PayPal test payment status updated.",
-      );
+          );
+          resultStatus = order.status;
+          setModal("funding");
+        }, "Payment checked.").then((ok) => {
+          if (ok)
+            setNotice(
+              resultStatus === "COMPLETED"
+                ? "Funds added to your test wallet."
+                : `Payment status: ${resultStatus}. Check funding activity for updates.`,
+            );
+        });
+      }
       history.replaceState({}, "", location.pathname + location.hash);
     }
   }, [state]);
-  const latest = state?.snapshots.at(-1);
   const [reference, setReference] = useState<Currency>();
   const display = reference || state?.preferences.preferred || "ILS";
   const header = {
@@ -218,12 +396,19 @@ export function App({
       "A clearer view of your currencies.",
       "Timestamped observations, transparent calculations, and timely alerts.",
     ],
+    "Savings Circles": [
+      "Savings Circles",
+      "Shared goals. Clear contributions. Unanimous decisions.",
+    ],
     Reports: ["Reports", "Understand your spending and savings."],
     Settings: [
       "Make Dream Piggy Bank yours.",
       "Your preferences, your rules, your control.",
     ],
   }[page];
+  const showRequestErrorPage =
+    requestError instanceof ApiError &&
+    ![400, 409, 422].includes(requestError.status);
   if (!state)
     return (
       <main className="welcome wallet-loading">
@@ -237,24 +422,15 @@ export function App({
             {requestError instanceof ApiError ? (
               <ErrorState
                 error={requestError}
-                onRetry={() => void run(refresh)}
+                onRetry={() => void run(() => refresh())}
               />
             ) : (
               <p role="alert">{error}</p>
             )}
-            {firebase && (
-              <AuthForm
-                busy={busy}
-                submit={async (email, password, register) => {
-                  await run(
-                    () => login(email, password, register),
-                    "Signed in.",
-                  );
-                }}
-              />
-            )}
             {!(requestError instanceof ApiError) && (
-              <Button onClick={() => void run(refresh)}>Try again</Button>
+              <Button onClick={() => void run(() => refresh())}>
+                Try again
+              </Button>
             )}
             {onSignOut && (
               <Button secondary onClick={onSignOut}>
@@ -305,44 +481,53 @@ export function App({
           Dream Piggy Bank<span className="brand-dot">.</span>
         </a>
         <span className="nav-label">YOUR WORKSPACE</span>
-        <nav>
-          {pages.map((p, i) => {
-            const Icon = icons[i];
-            return (
-              <button
-                key={p}
-                onClick={() => go(p)}
-                className={page === p ? "nav-item active" : "nav-item"}
-              >
-                <Icon size={19} />
-                {p}
-                {page === p && <span className="active-dot" />}
-              </button>
-            );
-          })}
+        <nav className="sidebar-navigation" aria-label="Workspace">
+          <div className="workspace-links">
+            {pages
+              .filter((p) => p !== "Settings")
+              .map((p) => {
+                const i = pages.indexOf(p);
+                const Icon = icons[i];
+                return (
+                  <button
+                    key={p}
+                    onClick={() => go(p)}
+                    className={page === p ? "nav-item active" : "nav-item"}
+                  >
+                    <Icon size={19} />
+                    {p}
+                    {page === p && <span className="active-dot" />}
+                  </button>
+                );
+              })}
+          </div>
+          <div className="sidebar-bottom">
+            <button
+              onClick={() => go("Settings")}
+              className={page === "Settings" ? "nav-item active" : "nav-item"}
+              aria-current={page === "Settings" ? "page" : undefined}
+            >
+              <Settings size={19} />
+              Settings
+              {page === "Settings" && <span className="active-dot" />}
+            </button>
+            <a className="nav-item" href="/help">
+              <CircleHelp size={19} />
+              Help Center
+            </a>
+
+            <button className="profile" onClick={() => go("Settings")}>
+              <span className="avatar">
+                {state.preferences.name.slice(0, 2).toUpperCase()}
+              </span>
+              <span>
+                <strong>{state.preferences.name}</strong>
+                {<small>Signed in</small>}
+              </span>
+              <ChevronRight size={16} />
+            </button>
+          </div>
         </nav>
-        <div className="sidebar-bottom">
-          <a className="nav-item" href="/help">
-            <CircleHelp size={19} />
-            Help Center
-          </a>
-          {state.authMode === "demo" && onSignOut && (
-            <Button secondary onClick={onSignOut}>
-              <LogOut size={16} />
-              Exit Demo Mode
-            </Button>
-          )}
-          <button className="profile" onClick={() => go("Settings")}>
-            <span className="avatar">
-              {state.preferences.name.slice(0, 2).toUpperCase()}
-            </span>
-            <span>
-              <strong>{state.preferences.name}</strong>
-              {state.authMode !== "demo" && <small>Signed in</small>}
-            </span>
-            <ChevronRight size={16} />
-          </button>
-        </div>
       </aside>
       {mobile && <div className="scrim" onClick={() => setMobile(false)} />}
       <div className="workspace">
@@ -360,12 +545,6 @@ export function App({
             </span>
           </div>
           <div className="row">
-            {state.authMode === "demo" && (
-              <span className="demo-pill">
-                <span />
-                Demo Mode
-              </span>
-            )}
             <button
               className="icon-button notification-button"
               aria-label="Notifications"
@@ -409,13 +588,13 @@ export function App({
               </Button>
             )}
           </div>
-          {requestError instanceof ApiError && !modal && (
+          {showRequestErrorPage && !modal && (
             <ErrorState
               error={requestError}
-              onRetry={() => void run(refresh)}
+              onRetry={() => void run(() => refresh())}
             />
           )}
-          {error && !modal && !(requestError instanceof ApiError) && (
+          {error && !modal && !showRequestErrorPage && (
             <div className="banner error" role="alert">
               <span>{error}</span>
               <button aria-label="Dismiss error" onClick={() => setError("")}>
@@ -429,6 +608,22 @@ export function App({
               {notice}
             </div>
           )}
+          {invitationOpen && (
+            <Invitation
+              authenticated
+              onJoined={() => {
+                setInvitationOpen(false);
+                go("Savings Circles");
+              }}
+            />
+          )}
+          {page === "Savings Circles" && (
+            <Circles
+              state={state}
+              onUpdated={refresh}
+              onDestinationSaved={destinationSaved}
+            />
+          )}
           {page === "Home" && (
             <Dashboard
               state={state}
@@ -437,19 +632,49 @@ export function App({
               onNavigate={go}
               onCreate={() => setModal("goal")}
               onSelect={setModal}
+              onAddFunds={() => setModal("funding")}
+              sections={sections}
+              onRetrySection={retrySection}
+              marketLoading={!marketStatus}
+              marketError={
+                marketStatus?.connection === "unavailable"
+                  ? marketStatus.error
+                  : undefined
+              }
+              onRetryMarket={() => setMarketVersion((v) => v + 1)}
             />
           )}
           {page === "My Wallet" && (
             <>
-              {currencyCards}
+              <div className="wallet-funding">
+                {currencyCards}
+                <div className="actions">
+                  <Button onClick={() => setModal("funding")}>Add Funds</Button>
+                </div>
+              </div>
               <section className="panel">
                 <PanelHead
                   title="Wallet activity"
                   subtitle="Select a row for ledger details."
                 />
-                <Activity state={state} onSelect={setModal} />
+                <Activity
+                  state={state}
+                  onSelect={setModal}
+                  onFilter={setActivityFilter}
+                  loading={sections.activity.loading}
+                  error={sections.activity.error}
+                  retry={() => retrySection("activity")}
+                />
+                {hasMore && !sections.activity.loading && (
+                  <Button
+                    secondary
+                    disabled={moreLoading}
+                    onClick={() => void loadMore()}
+                  >
+                    {moreLoading ? "Loading..." : "Load more activity"}
+                  </Button>
+                )}
               </section>
-              <Sandbox state={state} busy={busy} run={run} />
             </>
           )}
           {page === "Smart Savings" && (
@@ -492,25 +717,21 @@ export function App({
                   </div>
                 </section>
               )}
-              <div className="currency-grid">
-                {currencies.map((c) => (
-                  <article className="currency-card" key={c}>
-                    <div className="row between">
-                      <span className="eyebrow">{c} SAVINGS JAR</span>
-                      <Leaf size={18} />
-                    </div>
-                    <h2>{money(state.savingsBalances[c], c)}</h2>
-                    <small>
-                      Round to {money(state.preferences.increments[c], c)} · cap{" "}
-                      {money(state.preferences.caps[c], c)}
-                    </small>
-                  </article>
-                ))}
-              </div>
+              <SavingsDestinationPanel
+                state={state}
+                onChoose={() => {
+                  setPendingPreferences(undefined);
+                  setModal("savings-setup");
+                }}
+              />
+              <HistoricalSavings
+                onUpdated={refresh}
+                goalsRevision={state.goals}
+              />
               <section className="panel">
                 <PanelHead
                   title="Your savings goals"
-                  subtitle="Each currency has its own selected destination."
+                  subtitle="Set a default goal for future round-ups."
                   action={
                     <button
                       className="text-link"
@@ -521,19 +742,29 @@ export function App({
                     </button>
                   }
                 />
-                <SavingsCarousel
-                  state={state}
-                  busy={busy}
-                  onCreate={() => setModal("goal")}
-                  onDestination={(goal) =>
-                    void prefs({
-                      goalIds: {
-                        ...state.preferences.goalIds,
-                        [goal.currency]: goal.id,
-                      },
-                    })
-                  }
-                />
+                <DeferredSection
+                  label="savings goals"
+                  {...sections.overview}
+                  retry={() => retrySection("overview")}
+                >
+                  <SavingsCarousel
+                    state={state}
+                    busy={busy}
+                    selectedGoalId={inspectedGoalId}
+                    onInspect={setInspectedGoalId}
+                    onCreate={() => setModal("goal")}
+                    onDestination={(goal) =>
+                      void saveDestination({ kind: "goal", id: goal.id })
+                    }
+                    onClearDefault={() => void prefs({ savings: "disabled" })}
+                    onArchive={(goal) =>
+                      void run(
+                        () => api(`/goals/${goal.id}`, {}, "DELETE"),
+                        "Goal archived. Existing savings are preserved.",
+                      )
+                    }
+                  />
+                </DeferredSection>
               </section>
               <section className="panel">
                 <PanelHead
@@ -557,22 +788,43 @@ export function App({
                     {reportLoading && (
                       <p role="status">Updating your report...</p>
                     )}
-                    {reportPanel(state.reports[0])}
+                    <DeferredSection
+                      label="reports"
+                      {...sections.overview}
+                      retry={() => retrySection("overview")}
+                    >
+                      {reportPanel(state.reports[0])}
+                    </DeferredSection>
                   </>
                 )}
               </section>
               <section className="panel">
                 <PanelHead
                   title="Round-up history"
-                  subtitle="Refunds reverse the original savings allocation."
+                  subtitle="Personal-goal refunds reverse savings. Circle savings require an approved return."
                 />
-                <Transactions
-                  entries={state.ledger
-                    .filter((e) => e.saved > 0)
-                    .slice()
-                    .reverse()}
-                  onSelect={setModal}
-                />
+                <DeferredSection
+                  label="round-up history"
+                  {...sections.activity}
+                  retry={() => retrySection("activity")}
+                >
+                  <Transactions
+                    entries={state.ledger
+                      .filter((e) => e.saved > 0)
+                      .slice()
+                      .reverse()}
+                    onSelect={setModal}
+                  />
+                  {hasMore && (
+                    <Button
+                      secondary
+                      disabled={moreLoading}
+                      onClick={() => void loadMore()}
+                    >
+                      {moreLoading ? "Loading..." : "Load more activity"}
+                    </Button>
+                  )}
+                </DeferredSection>
               </section>
             </>
           )}
@@ -580,41 +832,26 @@ export function App({
             <>
               <MarketRatesPanel
                 state={state}
-                status={
-                  state.authMode === "demo" && state.demoMarketMode === "sample"
-                    ? undefined
-                    : (marketStatus ?? state.marketStatus)
-                }
+                status={marketStatus ?? state.marketStatus}
                 busy={busy}
-                onModeChange={
-                  state.authMode === "demo"
-                    ? (mode) =>
-                        void run(
-                          () => api("/demo/market-mode", { mode }),
-                          mode === "live"
-                            ? "Real Forex selected. Wallet funds remain simulated."
-                            : "Explicit sample-rate mode selected.",
-                        )
-                    : undefined
-                }
                 onRefresh={() =>
-                  void run(
-                    () => api("/rates/refresh", {}),
-                    state.authMode === "demo" &&
-                      state.demoMarketMode === "sample"
-                      ? "Simulated rates updated locally."
-                      : "Rates checked.",
-                  )
+                  void run(() => api("/rates/refresh", {}), "Rates checked.")
                 }
               />
               <MarketHistory state={state} />
               <Conversion
-                key={state.demoMarketMode}
                 state={state}
                 busy={busy}
                 run={run}
+                onAddFunds={() => setModal("funding")}
               />
-              <Alerts state={state} busy={busy} run={run} />
+              <DeferredSection
+                label="currency alerts"
+                {...sections.overview}
+                retry={() => retrySection("overview")}
+              >
+                <Alerts state={state} busy={busy} run={run} />
+              </DeferredSection>
               <CurrencyPerspective state={state} busy={busy} run={run} />
             </>
           )}
@@ -625,13 +862,14 @@ export function App({
                   title="Your financial review"
                   subtitle={
                     state.preferences.frequency === "weekly"
-                      ? "Last 7 days"
-                      : "Last 30 days"
+                      ? "Seven days ending on the selected date"
+                      : "Selected calendar month"
                   }
                   action={
                     <div className="actions report-controls">
                       <select
                         aria-label="Report frequency"
+                        disabled={busy}
                         value={state.preferences.frequency}
                         onChange={(e) =>
                           void prefs({
@@ -642,6 +880,14 @@ export function App({
                         <option value="weekly">Weekly</option>
                         <option value="monthly">Monthly</option>
                       </select>
+                      <input
+                        type="date"
+                        aria-label="Reporting date"
+                        title="Leave empty to use today in your timezone"
+                        value={reportDate}
+                        disabled={busy}
+                        onChange={(e) => setReportDate(e.target.value)}
+                      />
                       <Button
                         disabled={busy}
                         onClick={() => void generateReport()}
@@ -651,8 +897,13 @@ export function App({
                     </div>
                   }
                 />
-                {reportLoading && !state.reports.length ? (
+                {reportLoading ? (
                   <div role="status" aria-label="Generating report">
+                    <div className="report-totals">
+                      <CardSkeleton kind="report" />
+                      <CardSkeleton kind="report" />
+                      <CardSkeleton kind="report" />
+                    </div>
                     <CardSkeleton kind="report" />
                   </div>
                 ) : (
@@ -660,7 +911,13 @@ export function App({
                     {reportLoading && (
                       <p role="status">Updating your report...</p>
                     )}
-                    {reportPanel(state.reports[0])}
+                    <DeferredSection
+                      label="reports"
+                      {...sections.overview}
+                      retry={() => retrySection("overview")}
+                    >
+                      {reportPanel(state.reports[0])}
+                    </DeferredSection>
                   </>
                 )}
               </section>
@@ -669,84 +926,64 @@ export function App({
                   title="Report archive"
                   subtitle="Saved summaries from your wallet history."
                 />
-                {state.reports.length ? (
-                  <ReportArchive reports={state.reports} />
-                ) : (
-                  <Empty>Your generated reports will appear here.</Empty>
-                )}
+                <DeferredSection
+                  label="report archive"
+                  {...sections.overview}
+                  retry={() => retrySection("overview")}
+                >
+                  {state.reports.length ? (
+                    <>
+                      <ReportArchive reports={state.reports} />
+                      {(state.reportTotal ?? 0) > state.reports.length && (
+                        <Button
+                          secondary
+                          disabled={reportsMoreLoading}
+                          onClick={() => void loadMoreReports()}
+                        >
+                          {reportsMoreLoading
+                            ? "Loading..."
+                            : "Load more reports"}
+                        </Button>
+                      )}
+                      {reportsMoreError && (
+                        <p role="alert">
+                          We couldn't load older reports. Please try again.
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <Empty>Your generated reports will appear here.</Empty>
+                  )}
+                </DeferredSection>
               </section>
             </>
           )}
           {page === "Settings" && (
             <>
               {accountPanel}
-              <StoragePreferences />
-              <SettingsForm state={state} busy={busy} save={prefs} />
-              <section className="panel">
-                <PanelHead
-                  title="Account & features"
-                  subtitle={
-                    state.authMode === "demo"
-                      ? "Demo records stay in this browser tab."
-                      : "Manage your account and available features."
+              <DeferredSection
+                label="account preferences"
+                {...sections.overview}
+                retry={() => retrySection("overview")}
+              >
+                <SettingsForm state={state} busy={busy} save={prefs} />
+              </DeferredSection>
+              <div className="actions">
+                <Button
+                  secondary
+                  onClick={() =>
+                    onSignOut
+                      ? onSignOut()
+                      : void run(async () => {
+                          await logout();
+                          setState(undefined);
+                        }, "Signed out.")
                   }
-                />
-                <div className="integration-grid">
-                  <Integration
-                    name="Currency rate data"
-                    text={
-                      state.authMode === "demo" &&
-                      state.demoMarketMode === "sample"
-                        ? "Simulated sample rates - no live request"
-                        : latest
-                          ? "Market observations available"
-                          : "Not retrieved yet"
-                    }
-                  />
-                  <Integration
-                    name="AI explanations"
-                    text={
-                      state.capabilities.gemini
-                        ? "Available for reports and currency insights"
-                        : "Calculated reports and insights available"
-                    }
-                  />
-                  <Integration
-                    name="PayPal test payments"
-                    text={
-                      state.capabilities.paypal
-                        ? "Available with a PayPal test account"
-                        : "Currently unavailable"
-                    }
-                  />
-                </div>
-                <div className="actions">
-                  {firebase && (
-                    <Button secondary onClick={() => setModal("auth")}>
-                      Sign in / create account
-                    </Button>
-                  )}
-                  <Button
-                    secondary
-                    onClick={() =>
-                      onSignOut
-                        ? onSignOut()
-                        : void run(async () => {
-                            await logout();
-                            setState(undefined);
-                          }, "Signed out. A fresh demo session is ready.")
-                    }
-                  >
-                    <LogOut size={16} />
-                    {state.authMode === "demo" ? "Exit Demo Mode" : "Sign out"}
-                  </Button>
-                </div>
-                <p className="footnote">
-                  {state.authMode === "demo"
-                    ? "Exiting clears this tab demo data and returns to sign-in. Demo records never migrate into signed-in accounts."
-                    : "Account records stay separate from development demo data."}
-                </p>
-              </section>
+                >
+                  <LogOut size={16} />
+                  {"Sign out"}
+                </Button>
+              </div>
             </>
           )}
           <footer>
@@ -757,13 +994,46 @@ export function App({
           </footer>
         </main>
       </div>
+      {modal === "funding" && (
+        <Modal title="Add Funds" onClose={() => setModal(null)} error="">
+          <Funding onClose={() => setModal(null)} onUpdated={refresh} />
+        </Modal>
+      )}
+      {modal === "savings-setup" && (
+        <Modal
+          title="Set up Smart Savings"
+          onClose={() => {
+            setModal(null);
+            setPendingPreferences(undefined);
+          }}
+          error={error}
+        >
+          <SavingsSetup
+            onDone={async (saved) => {
+              destinationSaved(saved);
+              const ok = await run(async () => {
+                if (pendingPreferences)
+                  await api("/preferences", pendingPreferences, "PUT");
+              }, "Smart Savings destination updated.");
+              if (ok) {
+                setModal(null);
+                setPendingPreferences(undefined);
+              }
+            }}
+          />
+        </Modal>
+      )}
       {modal === "purchase" && (
         <Modal
           title="Simulate a purchase"
-          onClose={() => setModal(null)}
+          onClose={() => {
+            setModal(null);
+            setError("");
+            setRequestError(undefined);
+          }}
           error={error}
         >
-          <PurchaseForm
+          <GoalPurchase
             state={state}
             busy={busy}
             submit={async (body) => {
@@ -787,12 +1057,7 @@ export function App({
           <GoalForm
             busy={busy}
             submit={async (body) => {
-              if (
-                await run(
-                  () => api("/goals", body),
-                  "Goal created and selected for future round-ups.",
-                )
-              )
+              if (await run(() => api("/goals", body), "Savings goal created."))
                 setModal(null);
             }}
           />
@@ -804,62 +1069,52 @@ export function App({
           onClose={() => setModal(null)}
           error={error}
         >
-          {state.notices.length ? (
-            <>
-              <Button
-                secondary
-                onClick={() =>
-                  void run(
-                    () => api("/notifications/read", {}),
-                    "Notifications marked as read.",
-                  )
-                }
-              >
-                Mark all read
-              </Button>
-              {state.notices.map((n) => (
-                <div className="notice" key={n.id}>
-                  <strong>
-                    {!n.read && "● "}
-                    {n.title}
-                  </strong>
-                  <p>{n.body}</p>
-                  <small>{time(n.at)}</small>
-                </div>
-              ))}
-            </>
-          ) : (
-            <Empty>
-              No alerts yet. Configure a currency alert to keep an eye on a
-              rate.
-            </Empty>
-          )}
+          <DeferredSection
+            label="notifications"
+            {...sections.overview}
+            retry={() => retrySection("overview")}
+          >
+            {state.notices.length ? (
+              <>
+                <Button
+                  secondary
+                  onClick={() =>
+                    void run(
+                      () => api("/notifications/read", {}),
+                      "Notifications marked as read.",
+                    )
+                  }
+                >
+                  Mark all read
+                </Button>
+                {state.notices.map((n) => (
+                  <div className="notice" key={n.id}>
+                    <strong>
+                      {!n.read && "● "}
+                      {n.title}
+                    </strong>
+                    <p>{n.body}</p>
+                    <small>{time(n.at)}</small>
+                  </div>
+                ))}
+              </>
+            ) : (
+              <Empty>
+                No alerts yet. Configure a currency alert to keep an eye on a
+                rate.
+              </Empty>
+            )}
+          </DeferredSection>
         </Modal>
       )}
-      {modal === "auth" && (
-        <Modal
-          title="Welcome to your wallet"
-          onClose={() => setModal(null)}
-          error={error}
-        >
-          <AuthForm
-            busy={busy}
-            submit={async (email, password, register) => {
-              if (
-                await run(() => login(email, password, register), "Signed in.")
-              )
-                setModal(null);
-            }}
-          />
-        </Modal>
-      )}
+
       {typeof modal === "object" && modal !== null && (
         <Modal
           title="Activity details"
           onClose={() => setModal(null)}
           error={error}
         >
-          <TransactionDetails entry={modal} />
+          <TransactionDetails entry={modal} goals={state.goals} />
           {modal.kind === "purchase" &&
             !state.ledger.some((e) => e.originalId === modal.id) && (
               <Button
@@ -872,13 +1127,17 @@ export function App({
                         id: modal.id,
                         requestId: crypto.randomUUID(),
                       }),
-                    "Purchase and its savings allocation fully reversed.",
+                    modal.circleId
+                      ? "Purchase refunded. The Circle contribution remains locked."
+                      : "Purchase and its savings allocation fully reversed.",
                   ).then((ok) => {
                     if (ok) setModal(null);
                   })
                 }
               >
-                Refund simulated purchase
+                {modal.circleId
+                  ? "Refund purchase only"
+                  : "Refund simulated purchase"}
               </Button>
             )}
         </Modal>

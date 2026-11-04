@@ -1,11 +1,7 @@
+import { Invitation } from "./Circles";
 import { CardSkeleton, PageSkeleton } from "./Skeleton";
+import { startStage, finishStage } from "./performance";
 import { clearPrivateCache } from "./requestCache";
-import {
-  clearDemoSession,
-  hasDemoSession,
-  demoEnabled,
-  setDemoTransport,
-} from "./demoSession";
 import { Auth0Provider, useAuth0 } from "@auth0/auth0-react";
 import {
   lazy,
@@ -16,8 +12,9 @@ import {
   type ReactNode,
 } from "react";
 import { ArrowRight, Leaf, Wallet } from "lucide-react";
+const loadWalletApp = () => import("./App");
 const WalletApp = lazy(() =>
-  import("./App").then((module) => ({ default: module.App })),
+  loadWalletApp().then((module) => ({ default: module.App })),
 );
 function App(props: ComponentProps<typeof import("./App").App>) {
   return (
@@ -34,12 +31,12 @@ function App(props: ComponentProps<typeof import("./App").App>) {
   );
 }
 import { OnboardingBoundary } from "./Onboarding";
-import { api, configuration, setAuth0TokenProvider } from "./api";
+import { configuration, setAuth0TokenProvider } from "./api";
 import { Button } from "./ui";
 import {
-  auth0IdTokenProvider,
+  sdkIdTokenProvider,
   configureSupabase,
-  getBrowserSupabase,
+  supabaseConfigured,
   setSupabaseIdTokenProvider,
 } from "./supabase";
 export type AuthConfig = {
@@ -88,7 +85,7 @@ export function authenticationError(error: unknown): string {
 }
 export function safeReturnTo(value?: string) {
   // Existing Dream Piggy Bank routes are hash based; never accept an external return URL.
-  return /^\/#(?:Home|My%20Wallet|Smart%20Savings|Currency%20Rates|Reports|Settings)$/.test(
+  return /^(?:\/#(?:Home|My%20Wallet|Smart%20Savings|Currency%20Rates|Reports|Settings|Savings%20Circles)|\/circles\/invite\/[A-Za-z0-9_-]{43})$/.test(
     value || "",
   )
     ? value!
@@ -127,12 +124,12 @@ export function AuthScreen({
   config,
   initialError = "",
   resetOnly = false,
-  onDemo,
+  invitation,
 }: {
   config: AuthConfig;
   initialError?: string;
   resetOnly?: boolean;
-  onDemo?: () => void;
+  invitation?: ReactNode;
 }) {
   const { loginWithRedirect } = useAuth0();
   const [mode, setMode] = useState<"login" | "signup" | "reset">(
@@ -215,6 +212,7 @@ export function AuthScreen({
   const Layout = resetOnly ? "div" : AuthLayout;
   return (
     <Layout>
+      {invitation}
       <span className="eyebrow">YOUR DREAM PIGGY BANK ACCOUNT</span>
       <h2>
         {mode === "signup"
@@ -334,7 +332,6 @@ export function AuthScreen({
           </button>
         </p>
       )}
-      {!resetOnly && <DemoButton onDemo={onDemo} />}
     </Layout>
   );
 }
@@ -362,30 +359,20 @@ function AccountProfile({ config }: { config: AuthConfig }) {
     </section>
   );
 }
-export type SessionState =
-  "loading" | "authenticated" | "unauthenticated" | "development-demo";
+export type SessionState = "loading" | "authenticated" | "unauthenticated";
 export function sessionState(
   loading: boolean,
   authenticated: boolean,
-  demo = false,
 ): SessionState {
   return authenticated
     ? loading
       ? "loading"
       : "authenticated"
-    : demo && demoEnabled()
-      ? "development-demo"
-      : loading
-        ? "loading"
-        : "unauthenticated";
+    : loading
+      ? "loading"
+      : "unauthenticated";
 }
-export function AuthGate({
-  config,
-  onDemo,
-}: {
-  config: AuthConfig;
-  onDemo?: () => void;
-}) {
+export function AuthGate({ config }: { config: AuthConfig }) {
   const {
     isLoading,
     isAuthenticated,
@@ -396,54 +383,42 @@ export function AuthGate({
     user,
   } = useAuth0();
   const [ready, setReady] = useState(false);
-  const [supabaseError, setSupabaseError] = useState("");
+  const [providerSubject, setProviderSubject] = useState<string>();
+  const [restoreSlow, setRestoreSlow] = useState(false);
+  useEffect(() => {
+    setRestoreSlow(false);
+    if (!isLoading) return;
+    const timer = setTimeout(() => setRestoreSlow(true), 15000);
+    return () => clearTimeout(timer);
+  }, [isLoading]);
   const [logoutError, setLogoutError] = useState("");
   useEffect(() => {
-    let active = true;
+    if (isLoading) startStage("auth_restore");
+    else finishStage("auth_restore");
+  }, [isLoading]);
+  useEffect(() => {
     if (isAuthenticated) {
-      clearDemoSession();
       setReady(false);
-      setSupabaseError("");
       // Silent renewal refreshes the SDK's ID token; its opaque access token
       // is deliberately discarded. No custom API audience is requested.
-      const idToken = auth0IdTokenProvider(async () => {
-        await getAccessTokenSilently();
-        return getIdTokenClaims();
-      }, !!getBrowserSupabase());
+      const idToken = sdkIdTokenProvider(
+        getIdTokenClaims,
+        () => getAccessTokenSilently(),
+        supabaseConfigured(),
+        user?.sub,
+      );
       setAuth0TokenProvider(idToken);
       setSupabaseIdTokenProvider(idToken);
-      void (async () => {
-        try {
-          const client = getBrowserSupabase();
-          if (client) {
-            // Initialize the profile through the trusted API, then exercise Supabase RLS with Auth0's ID token.
-            await api("/onboarding");
-            const { data, error: queryError } = await client
-              .from("profiles")
-              .select("auth0_sub")
-              .eq("auth0_sub", user?.sub || "")
-              .single();
-            if (queryError || data?.auth0_sub !== user?.sub)
-              throw queryError || new Error("Profile identity mismatch");
-          }
-          if (active) setReady(true);
-        } catch {
-          if (active) {
-            setSupabaseError(
-              "We couldn't load your account. Please try again or sign in again.",
-            );
-            setReady(true);
-          }
-        }
-      })();
+      setProviderSubject(user?.sub || "authenticated");
+      void loadWalletApp().catch(() => undefined);
+      setReady(true);
     } else {
       setReady(false);
-      setSupabaseError("");
+      setProviderSubject(undefined);
       setAuth0TokenProvider();
       setSupabaseIdTokenProvider();
     }
     return () => {
-      active = false;
       setAuth0TokenProvider();
       setSupabaseIdTokenProvider();
     };
@@ -455,9 +430,21 @@ export function AuthGate({
     );
   };
   const status = sessionState(
-    isLoading || (isAuthenticated && !ready),
+    isLoading ||
+      (isAuthenticated &&
+        (!ready || providerSubject !== (user?.sub || "authenticated"))),
     isAuthenticated,
   );
+  if (restoreSlow && isLoading)
+    return (
+      <AuthLayout>
+        <h2>Sign-in is taking longer than expected.</h2>
+        <p role="alert">
+          Please try again. Your wallet information has not been loaded.
+        </p>
+        <Button onClick={() => location.reload()}>Try again</Button>
+      </AuthLayout>
+    );
   if (status === "loading")
     return (
       <AuthLayout>
@@ -467,26 +454,16 @@ export function AuthGate({
         </div>
       </AuthLayout>
     );
-  if (isAuthenticated && supabaseError)
-    return (
-      <AuthLayout>
-        <h2>Your account is temporarily unavailable.</h2>
-        <p role="alert" className="banner error">
-          {supabaseError}
-        </p>
-        <Button onClick={() => location.reload()}>Try again</Button>
-        <Button secondary onClick={signOut}>
-          Sign out
-        </Button>
-        {logoutError && <p role="alert">{logoutError}</p>}
-      </AuthLayout>
-    );
   if (error || !isAuthenticated)
     return (
       <AuthScreen
         config={config}
-        onDemo={onDemo}
         initialError={error ? authenticationError(error) : ""}
+        invitation={
+          /^\/circles\/invite\/[A-Za-z0-9_-]{43}$/.test(location.pathname) ? (
+            <Invitation />
+          ) : undefined
+        }
       />
     );
   return (
@@ -497,22 +474,25 @@ export function AuthGate({
         </p>
       )}
       <OnboardingBoundary key={user?.sub} onSignOut={signOut}>
-        <App
-          accountPanel={<AccountProfile config={config} />}
-          onSignOut={signOut}
-        />
+        {(initial) => (
+          <App
+            initial={initial}
+            accountPanel={<AccountProfile config={config} />}
+            onSignOut={signOut}
+          />
+        )}
       </OnboardingBoundary>
     </>
   );
 }
-function RegularAuthRoot({ onDemo }: { onDemo?: () => void }) {
+function RegularAuthRoot() {
   const [config, setConfig] = useState<{
     auth0: AuthConfig | null;
     supabase: { url: string; publishableKey: string } | null;
-    firebase?: boolean;
   }>();
   const [error, setError] = useState(false);
   useEffect(() => {
+    startStage("dashboard_usable");
     void configuration()
       .then(setConfig)
       .catch(() => setError(true));
@@ -525,7 +505,6 @@ function RegularAuthRoot({ onDemo }: { onDemo?: () => void }) {
           Your information is temporarily unavailable. Please try again.
         </p>
         <Button onClick={() => location.reload()}>Try again</Button>
-        <DemoButton onDemo={onDemo} />
       </AuthLayout>
     );
   if (!config)
@@ -537,13 +516,12 @@ function RegularAuthRoot({ onDemo }: { onDemo?: () => void }) {
         </div>
       </AuthLayout>
     );
-  if (!config.auth0 && config.firebase) return <App />;
+
   if (!config.auth0)
     return (
       <AuthLayout>
         <h2>Welcome to Dream Piggy Bank.</h2>
         <p>Sign-in is temporarily unavailable. Please try again later.</p>
-        <DemoButton onDemo={onDemo} />
       </AuthLayout>
     );
   configureSupabase(config.supabase);
@@ -555,6 +533,7 @@ function RegularAuthRoot({ onDemo }: { onDemo?: () => void }) {
       cacheLocation="localstorage"
       useRefreshTokens
       useRefreshTokensFallback
+      httpTimeoutInSeconds={10}
       authorizationParams={{
         redirect_uri: location.origin,
         scope: "openid profile email",
@@ -563,100 +542,10 @@ function RegularAuthRoot({ onDemo }: { onDemo?: () => void }) {
         history.replaceState({}, "", safeReturnTo(state?.returnTo));
       }}
     >
-      <AuthGate config={c} onDemo={onDemo} />
+      <AuthGate config={c} />
     </Auth0Provider>
   );
 }
-function DemoButton({ onDemo }: { onDemo?: () => void }) {
-  return demoEnabled() && onDemo ? (
-    <div className="demo-entry">
-      <Button secondary onClick={onDemo}>
-        Explore Dream Piggy Bank (Demo Mode)
-      </Button>
-      <p className="footnote">
-        Explore with simulated records saved in this browser tab.
-      </p>
-    </div>
-  ) : null;
-}
 export function AuthRoot() {
-  const [demo, setDemo] = useState(false);
-  const [resuming, setResuming] = useState(hasDemoSession);
-  const [demoError, setDemoError] = useState("");
-  async function enterDemo(restore = false) {
-    if (!demoEnabled()) return;
-    try {
-      // Vite removes this import, and the entire demo data service, in production.
-      if (
-        import.meta.env.DEV &&
-        import.meta.env.VITE_ENABLE_DEMO_MODE === "true"
-      ) {
-        const { createDemoService } = await import("./demo/service");
-        setAuth0TokenProvider();
-        setSupabaseIdTokenProvider();
-        configureSupabase(null);
-        setDemoTransport(createDemoService());
-        if (!restore) history.replaceState({}, "", "/#Home");
-        setDemo(true);
-      }
-    } catch {
-      clearDemoSession();
-      setDemoError(
-        "Demo Mode could not start. Allow browser session storage and try again.",
-      );
-    } finally {
-      setResuming(false);
-    }
-  }
-  useEffect(() => {
-    if (hasDemoSession()) void enterDemo(true);
-    else clearDemoSession();
-    return () => setDemoTransport();
-  }, []);
-  function exitDemo() {
-    clearDemoSession();
-    setAuth0TokenProvider();
-    setSupabaseIdTokenProvider();
-    history.replaceState({}, "", "/");
-    setDemo(false);
-  }
-  const status = sessionState(resuming, false, demo);
-  if (status === "loading")
-    return (
-      <AuthLayout>
-        <h2 role="status">Restoring local demo...</h2>
-      </AuthLayout>
-    );
-  if (status === "development-demo")
-    return (
-      <div data-session="development-demo">
-        <App
-          onSignOut={exitDemo}
-          accountPanel={
-            <section className="panel">
-              <h2>Your profile</h2>
-              <p>alex@example.invalid</p>
-              <p>
-                Edit your display name and preferences below. This profile is
-                separate from your signed-in account.
-              </p>
-              <p className="footnote">
-                Goal editing is not implemented in the current application.
-                Create and select goals to test round-ups.
-              </p>
-            </section>
-          }
-        />
-      </div>
-    );
-  return (
-    <>
-      {demoError && (
-        <p role="alert" className="banner error">
-          {demoError}
-        </p>
-      )}
-      <RegularAuthRoot onDemo={() => void enterDemo()} />
-    </>
-  );
+  return <RegularAuthRoot />;
 }

@@ -1,9 +1,20 @@
+import type { SavingsDestination, SavingsQuote } from "./circles";
 import type { Currency } from "./money";
 export type Balances = Record<Currency, number>;
 export type Entry = {
   id: string;
   at: string;
-  kind: "opening" | "purchase" | "refund" | "conversion";
+  kind:
+    | "opening"
+    | "purchase"
+    | "refund"
+    | "conversion"
+    | "funding"
+    | "reversal"
+    | "adjustment";
+  status?: string;
+  fundingSource?: string;
+  reference?: string;
   currency: Currency;
   amount: number;
   saved: number;
@@ -14,8 +25,13 @@ export type Entry = {
     account: "available" | "savings" | "external";
     amount: number;
   }[];
+  circleId?: string;
+  saving?: SavingsQuote;
   goalId?: string;
+  savingsDestination?: string;
+  allocationDelta?: number;
   originalId?: string;
+  savingsRetained?: boolean;
   to?: Currency;
   received?: number;
   rate?: number;
@@ -33,14 +49,16 @@ export type Goal = {
   target: number;
   createdAt: string;
   targetDate?: string;
+  archived?: boolean;
 };
 export type Preferences = {
+  savingsDestination?: SavingsDestination | null;
   name: string;
   preferred: Currency;
   savings: "unseen" | "enabled" | "disabled";
   increments: Balances;
   caps: Balances;
-  goalIds: Partial<Record<Currency, string>>;
+  goalIds: Partial<Record<Currency, string | null>>;
   frequency: "weekly" | "monthly";
   notifications: boolean;
 };
@@ -84,6 +102,8 @@ export type Notice = {
   read: boolean;
 };
 export type Recommendation = {
+  estimatedSavings?: number;
+  recordedSavings?: number;
   id: string;
   currency: Currency;
   current: number;
@@ -120,6 +140,9 @@ export type CurrencyInsight = {
   observations: string[];
 };
 export type Summary = {
+  averageSpending?: number | null;
+  previousSavings?: number | null;
+  savingsChange?: number | null;
   currency: Currency;
   spending: number;
   savings: number;
@@ -130,6 +153,26 @@ export type Summary = {
   categories: Record<string, number>;
 };
 export type Report = {
+  circleSavings?: Balances;
+  totalSavings?: Balances;
+  savingsBalances?: Balances;
+  generalSavings?: Balances;
+  until?: string;
+  timezone?: string;
+  complete?: boolean;
+  previousUntil?: string;
+  status?: "complete" | "ai_unavailable" | "empty";
+  aiError?: string;
+  model?: string;
+  promptVersion?: string;
+  inputFingerprint?: string;
+  aiContent?: {
+    summary: string;
+    spendingInsights: string[];
+    savingsInsights: string[];
+    recommendations: { id: string; description: string }[];
+    nextSteps: string[];
+  };
   explanationCache?: { generatedAt: string; cached: boolean };
   id: string;
   at: string;
@@ -138,15 +181,13 @@ export type Report = {
   summaries: Summary[];
   source: "Gemini" | "deterministic";
   observations: string[];
-  goals: { name: string; currency: Currency; target: number; saved: number }[];
-};
-export type SandboxOrder = {
-  id: string;
-  requestId: string;
-  status: string;
-  captureId?: string;
-  approvalUrl?: string;
-  at: string;
+  goals: {
+    name: string;
+    currency: Currency;
+    target: number;
+    saved: number;
+    progressPercent?: number;
+  }[];
 };
 export type OnboardingProfile = {
   fullName: string;
@@ -164,6 +205,13 @@ export type OnboardingStatus = {
   notifications: boolean;
 };
 export type UserData = {
+  circleEntries?: {
+    currency: Currency;
+    amount: number;
+    at: string;
+    circleId: string;
+  }[];
+  savingsRuleEnabled?: Partial<Record<Currency, boolean>>;
   auth0Sub?: string;
   profile?: OnboardingProfile;
   createdAt: string;
@@ -174,11 +222,18 @@ export type UserData = {
   notices: Notice[];
   reports: Report[];
   recommendations: Recommendation[];
-  sandbox: SandboxOrder[];
   operations: Record<string, { fingerprint: string; result: unknown }>;
 };
 export type State = UserData & {
-  demoMarketMode?: "live" | "sample";
+  progressive?: boolean;
+  reportTotal?: number;
+  dashboard?: {
+    circleSavings?: Balances;
+    generalSavings?: Balances;
+    dailySpending: { day: string; currency: Currency; amount: number }[];
+    goalTotals: Record<string, number>;
+  };
+  loadingSections?: string[];
   marketStatus?: MarketStatus;
   rateStaleMs?: number;
   balances: Balances;
@@ -186,7 +241,24 @@ export type State = UserData & {
   snapshots: Snapshot[];
   ratesError?: string;
   capabilities: { firebase: boolean; paypal: boolean; gemini: boolean };
-  authMode: "demo" | "firebase" | "auth0";
+  authMode: "auth0";
+};
+export type Bootstrap = { onboarding: OnboardingStatus; state?: State };
+export type ActivityPage = { entries: Entry[]; nextCursor: string | null };
+export type FundingOrder = {
+  id: string;
+  auth0_sub: string;
+  request_id: string;
+  fingerprint: string;
+  currency: "USD" | "ILS";
+  amount_minor: number | string;
+  status: string;
+  provider_order_id?: string;
+  capture_id?: string;
+  transaction_id?: string;
+  approval_url?: string;
+  created_at: string;
+  reversal_id?: string;
 };
 
 export type MarketStatus = {

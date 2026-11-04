@@ -1,8 +1,9 @@
 import type { Goal, State } from "../shared/types";
+import { goalSaved } from "../shared/ledger";
 export const goalAmount = (state: State, id: string) =>
-  state.ledger
-    .filter((e) => e.goalId === id)
-    .reduce((sum, e) => sum + (e.kind === "refund" ? -e.saved : e.saved), 0);
+  state.dashboard
+    ? (state.dashboard.goalTotals[id] ?? 0)
+    : goalSaved(state, id);
 export const goalProgress = (goal: Goal, saved: number) =>
   goal.target > 0
     ? Math.max(0, Math.min(100, Math.floor((saved / goal.target) * 100)))

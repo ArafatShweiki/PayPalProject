@@ -1,0 +1,33 @@
+{
+  "mode": "after",
+  "databaseDelayMs": 30,
+  "transactionCount": 1501,
+  "criticalRequests": 1,
+  "samplesMs": [
+    122,
+    70,
+    94
+  ],
+  "medianMs": 94,
+  "databaseOperations": [
+    3,
+    3,
+    3
+  ],
+  "operations": [
+    "profiles",
+    "wallets",
+    "savings_rules"
+  ],
+  "serverTimings": [
+    {
+      "server-timing": "auth_verify_0;dur=0.1, db_profile_1;dur=38.6, db_wallets_2;dur=45.2, db_rules_3;dur=45.2, wallet_essential_4;dur=45.7"
+    },
+    {
+      "server-timing": "auth_verify_0;dur=0.0, db_profile_1;dur=32.2, db_wallets_2;dur=30.8, db_rules_3;dur=30.8, wallet_essential_4;dur=31.0"
+    },
+    {
+      "server-timing": "auth_verify_0;dur=0.0, db_profile_1;dur=44.3, db_wallets_2;dur=30.8, db_rules_3;dur=30.9, wallet_essential_4;dur=31.0"
+    }
+  ]
+}

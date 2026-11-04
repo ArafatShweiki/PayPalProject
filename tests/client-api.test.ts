@@ -1,4 +1,4 @@
-﻿// @vitest-environment jsdom
+// @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import { api, setAuth0TokenProvider } from "../src/api";
 afterEach(() => {
@@ -48,13 +48,11 @@ it("respects Retry-After and never immediately retries a limited mutation", asyn
 it("simplifies service errors while retaining status and request references", async () => {
   vi.stubGlobal(
     "fetch",
-    vi
-      .fn()
-      .mockResolvedValue(
-        json({ error: "Supabase connection error" }, 503, {
-          "x-request-id": "safe-reference",
-        }),
-      ),
+    vi.fn().mockResolvedValue(
+      json({ error: "Supabase connection error" }, 503, {
+        "x-request-id": "safe-reference",
+      }),
+    ),
   );
   setAuth0TokenProvider(async () => "alice");
   await expect(api("/state")).rejects.toMatchObject({

@@ -14,7 +14,6 @@ import {
   field,
   type Runner,
 } from "./ui";
-
 export function CurrencyPerspective({
   state,
   busy,
@@ -131,7 +130,6 @@ export function CurrencyPerspective({
     </section>
   );
 }
-
 function PerspectiveResult({
   insight: i,
   state,
@@ -158,9 +156,7 @@ function PerspectiveResult({
         <span className="pill">
           {i.source === "Gemini"
             ? "AI-generated explanation"
-            : state.authMode === "demo"
-              ? "Local calculations · no live AI"
-              : "Calculated explanation · AI unavailable"}
+            : "Calculated explanation · AI unavailable"}
         </span>
         <span className={expired ? "rate-down" : "muted"}>
           {expired ? "Stale quote" : "Available quote"} ·{" "}
@@ -232,9 +228,7 @@ function PerspectiveResult({
         target="_blank"
         rel="noreferrer"
       >
-        {state.authMode === "demo" && state.demoMarketMode !== "live"
-          ? "Sample rates · PMA reference website"
-          : "View rate source"}
+        {"View rate source"}
       </a>
       <details className="perspective-details">
         <summary>More details</summary>
@@ -269,7 +263,6 @@ function PerspectiveResult({
     </div>
   );
 }
-
 export function RateHistory({ state }: { state: State }) {
   const [from, setFrom] = useState<Currency>("USD");
   const [to, setTo] = useState<Currency>("ILS");
@@ -346,7 +339,6 @@ export function RateHistory({ state }: { state: State }) {
     </section>
   );
 }
-
 export function Alerts({
   state,
   busy,
@@ -360,11 +352,7 @@ export function Alerts({
     <section className="panel">
       <PanelHead
         title="Keep an eye on a rate"
-        subtitle={
-          state.authMode === "demo"
-            ? "Local demo checks, with a 24-hour cooldown after each alert."
-            : "Rate checks, with a 24-hour cooldown after each alert."
-        }
+        subtitle={"Rate checks, with a 24-hour cooldown after each alert."}
       />
       <form
         onSubmit={(e) => {

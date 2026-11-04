@@ -1,10 +1,10 @@
+import { DeferredSection } from "./DeferredSection";
 import { snapshotRate } from "../shared/market";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowDownLeft,
   ArrowLeftRight,
   ArrowRight,
-  ArrowUpRight,
   CreditCard,
   Target,
   ChevronRight,
@@ -14,7 +14,6 @@ import {
   currencies,
   money,
   minor,
-  roundUp,
   convert,
   type Currency,
 } from "../shared/money";
@@ -29,7 +28,6 @@ import {
   field,
   type Runner,
 } from "./ui";
-
 export function GoalCard({
   goal,
   saved,
@@ -72,7 +70,6 @@ export function GoalCard({
     </div>
   );
 }
-
 export function Transactions({
   entries,
   onSelect,
@@ -87,7 +84,9 @@ export function Transactions({
           <span className={`transaction-icon ${e.kind}`}>
             {e.kind === "conversion" ? (
               <ArrowLeftRight size={18} />
-            ) : e.kind === "refund" || e.kind === "opening" ? (
+            ) : e.kind === "refund" ||
+              e.kind === "opening" ||
+              e.kind === "funding" ? (
               <ArrowDownLeft size={18} />
             ) : (
               <CreditCard size={18} />
@@ -95,13 +94,22 @@ export function Transactions({
           </span>
           <span className="transaction-name">
             <strong>{e.description}</strong>
+            {e.status && (
+              <small>
+                {e.status} · {e.fundingSource}
+              </small>
+            )}
             <small>
               {e.category} · {date(e.at)}
             </small>
           </span>
           <span className="transaction-value">
             <strong>
-              {e.kind === "refund" || e.kind === "opening" ? "+" : "−"}
+              {e.kind === "refund" ||
+              e.kind === "opening" ||
+              e.kind === "funding"
+                ? "+"
+                : "−"}
               {money(e.amount, e.currency)}
             </strong>
             {(e.saved > 0 || e.kind === "conversion") && (
@@ -117,14 +125,26 @@ export function Transactions({
       ))}
     </div>
   ) : (
-    <Empty>Your next step starts the story. Try a simulated purchase.</Empty>
+    <Empty>No transactions yet. Add funds to get started.</Empty>
   );
 }
-
 export function Activity({
   state,
   onSelect,
+  onFilter,
+  loading,
+  error,
+  retry,
 }: {
+  loading?: boolean;
+  error?: unknown;
+  retry?: () => void;
+  onFilter?: (
+    currency: string,
+    category: string,
+    from: string,
+    to: string,
+  ) => void;
   state: State;
   onSelect: (e: Entry) => void;
 }) {
@@ -135,7 +155,10 @@ export function Activity({
   const entries = state.ledger
     .filter(
       (e) =>
-        (currency === "all" || e.currency === currency || e.to === currency) &&
+        (currency === "all" ||
+          e.currency === currency ||
+          e.to === currency ||
+          e.postings.some((posting) => posting.currency === currency)) &&
         (category === "all" || e.category === category) &&
         (!from || e.at.slice(0, 10) >= from) &&
         (!to || e.at.slice(0, 10) <= to),
@@ -149,7 +172,10 @@ export function Activity({
           Currency
           <select
             value={currency}
-            onChange={(e) => setCurrency(e.target.value)}
+            onChange={(e) => {
+              setCurrency(e.target.value);
+              onFilter?.(e.target.value, category, from, to);
+            }}
           >
             <option value="all">All currencies</option>
             {currencies.map((c) => (
@@ -161,10 +187,28 @@ export function Activity({
           Category
           <select
             value={category}
-            onChange={(e) => setCategory(e.target.value)}
+            onChange={(e) => {
+              setCategory(e.target.value);
+              onFilter?.(currency, e.target.value, from, to);
+            }}
           >
             <option value="all">All categories</option>
-            {[...new Set(state.ledger.map((e) => e.category))].map((c) => (
+            {[
+              ...new Set([
+                "Food & drink",
+                "Groceries",
+                "Transport",
+                "Shopping",
+                "Bills",
+                "Entertainment",
+                "Health",
+                "Education",
+                "Other",
+                "Funding",
+                "Conversion",
+                ...state.ledger.map((e) => e.category),
+              ]),
+            ].map((c) => (
               <option key={c}>{c}</option>
             ))}
           </select>
@@ -174,7 +218,10 @@ export function Activity({
           <input
             type="date"
             value={from}
-            onChange={(e) => setFrom(e.target.value)}
+            onChange={(e) => {
+              setFrom(e.target.value);
+              onFilter?.(currency, category, e.target.value, to);
+            }}
           />
         </label>
         <label>
@@ -182,128 +229,31 @@ export function Activity({
           <input
             type="date"
             value={to}
-            onChange={(e) => setTo(e.target.value)}
+            onChange={(e) => {
+              setTo(e.target.value);
+              onFilter?.(currency, category, from, e.target.value);
+            }}
           />
         </label>
       </div>
-      <Transactions entries={entries} onSelect={onSelect} />
+      <DeferredSection
+        label="wallet activity"
+        loading={loading}
+        error={error}
+        retry={retry}
+      >
+        <Transactions entries={entries} onSelect={onSelect} />
+      </DeferredSection>
     </>
   );
 }
-
-export function PurchaseForm({
-  state,
-  busy,
-  submit,
-}: {
-  state: State;
-  busy: boolean;
-  submit: (body: unknown) => Promise<void>;
-}) {
-  const [currency, setCurrency] = useState<Currency>("ILS");
-  const [amount, setAmount] = useState("23.40");
-  const key = useRef(crypto.randomUUID());
-  let saved = 0;
-  try {
-    if (state.preferences.savings === "enabled")
-      saved = roundUp(
-        minor(amount, currency),
-        state.preferences.increments[currency],
-        state.preferences.caps[currency],
-      );
-  } catch {
-    /* Preview waits for valid input. */
-  }
-  return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        void submit({
-          requestId: key.current,
-          currency,
-          amount,
-          description: field(e.currentTarget, "description"),
-          category: field(e.currentTarget, "category"),
-        });
-      }}
-    >
-      <p className="muted">
-        A simulated purchase from your available wallet. No PayPal charge is
-        made.
-      </p>
-      <label>
-        Merchant or description
-        <input
-          name="description"
-          required
-          maxLength={80}
-          placeholder="e.g. Corner coffee"
-        />
-      </label>
-      <div className="form-grid">
-        <label>
-          Currency
-          <CurrencySelect
-            value={currency}
-            onChange={(c) => {
-              setCurrency(c);
-              key.current = crypto.randomUUID();
-            }}
-          />
-        </label>
-        <label>
-          Purchase amount
-          <input
-            inputMode="decimal"
-            required
-            value={amount}
-            onChange={(e) => {
-              setAmount(e.target.value);
-              key.current = crypto.randomUUID();
-            }}
-          />
-        </label>
-      </div>
-      <label>
-        Category
-        <select name="category">
-          {[
-            "Food & drink",
-            "Shopping",
-            "Transport",
-            "Education",
-            "Bills",
-            "Other",
-          ].map((c) => (
-            <option key={c}>{c}</option>
-          ))}
-        </select>
-      </label>
-      <div className="preview-box">
-        <div className="row between">
-          <span>Automatic savings</span>
-          <strong>{money(saved, currency)}</strong>
-        </div>
-        <p>
-          {state.preferences.savings === "enabled"
-            ? "Allocated automatically when this purchase succeeds."
-            : "Smart Savings is not active. You can enable it from Smart Savings or Settings."}
-        </p>
-        <small>Available: {money(state.balances[currency], currency)}</small>
-      </div>
-      <Button type="submit" disabled={busy}>
-        {busy ? "Processing…" : "Complete simulated purchase"}
-        <ArrowRight size={16} />
-      </Button>
-    </form>
-  );
-}
-
 export function GoalForm({
   busy,
   submit,
+  requireDefault = false,
 }: {
   busy: boolean;
+  requireDefault?: boolean;
   submit: (body: unknown) => Promise<void>;
 }) {
   const key = useRef(crypto.randomUUID());
@@ -317,6 +267,7 @@ export function GoalForm({
           name: field(f, "name"),
           currency: field(f, "currency"),
           amount: field(f, "amount"),
+          makeDefault: requireDefault || new FormData(f).has("makeDefault"),
           ...(field(f, "targetDate")
             ? { targetDate: field(f, "targetDate") }
             : {}),
@@ -351,18 +302,28 @@ export function GoalForm({
         Target date (optional)
         <input name="targetDate" type="date" />
       </label>
-      <p className="footnote">
-        Future round-ups in this currency go to this goal. Existing savings stay
-        in their original destination.
-      </p>
+      <label className="checkbox-label">
+        <input
+          type="checkbox"
+          name="makeDefault"
+          defaultChecked={requireDefault}
+          disabled={busy || requireDefault}
+        />
+        Make this my default savings goal
+      </label>
       <Button disabled={busy} type="submit">
         Create savings goal
       </Button>
     </form>
   );
 }
-
-export function TransactionDetails({ entry: e }: { entry: Entry }) {
+export function TransactionDetails({
+  entry: e,
+  goals = [],
+}: {
+  entry: Entry;
+  goals?: Goal[];
+}) {
   return (
     <>
       <div className="detail-amount">{money(e.amount, e.currency)}</div>
@@ -370,11 +331,53 @@ export function TransactionDetails({ entry: e }: { entry: Entry }) {
         <dt>Description</dt>
         <dd>{e.description}</dd>
         <dt>Type</dt>
-        <dd>{e.kind} · simulated</dd>
+        <dd>{e.kind === "funding" ? "Funds Added" : e.kind} · test wallet</dd>
+        {e.status && (
+          <>
+            <dt>Status</dt>
+            <dd>{e.status}</dd>
+            <dt>Funding source</dt>
+            <dd>{e.fundingSource}</dd>
+            <dt>Transaction reference</dt>
+            <dd>{e.reference}</dd>
+          </>
+        )}
         <dt>Date</dt>
         <dd>{time(e.at)}</dd>
+        {e.saving && (
+          <>
+            <dt>Savings credit</dt>
+            <dd>
+              {money(Number(e.saving.target_minor), e.saving.target_currency)}
+              {e.circleId ? " ? Savings Circle" : " ? Personal goal"}
+            </dd>
+            <dt>Conversion rate</dt>
+            <dd>
+              {(Number(e.saving.rate_units) / 1000000).toFixed(6)} ? Simulated
+            </dd>
+            <dt>Quote time</dt>
+            <dd>{new Date(e.saving.observed_at).toLocaleString()}</dd>
+            <dt>Conversion fee</dt>
+            <dd>
+              {money(Number(e.saving.fee_minor), e.saving.source_currency)}
+            </dd>
+          </>
+        )}
         <dt>Round-up</dt>
         <dd>{money(e.saved, e.currency)}</dd>
+        {e.saved > 0 && (
+          <>
+            <dt>Savings destination</dt>
+            <dd>
+              {e.goalId
+                ? (goals.find((g) => g.id === e.goalId)?.name ??
+                  "Previous savings goal")
+                : e.circleId
+                  ? "Savings Circle"
+                  : "Historical unassigned savings"}
+            </dd>
+          </>
+        )}
         {e.observedAt && (
           <>
             <dt>Market quote time</dt>
@@ -406,25 +409,39 @@ export function TransactionDetails({ entry: e }: { entry: Entry }) {
         </div>
       ))}
       <p className="footnote">
-        Full purchase refunds reverse both the purchase and its exact original
-        savings allocation.
+        {e.circleId
+          ? "Refunding the purchase returns only the merchant amount. Its Circle contribution stays locked; a return requires unanimous contributor approval in Savings Circles."
+          : "Full purchase refunds reverse both the purchase and its exact original savings allocation."}
       </p>
     </>
   );
 }
-
 export function Conversion({
   state,
   busy,
   run,
+  onAddFunds,
+  initialTo = "ILS",
 }: {
   state: State;
   busy: boolean;
   run: Runner;
+  onAddFunds?: () => void;
+  initialTo?: Currency;
 }) {
   const [from, setFrom] = useState<Currency>("USD");
-  const [to, setTo] = useState<Currency>("ILS");
+  const [to, setTo] = useState<Currency>(initialTo);
+  const conversionPanel = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (initialTo === "JOD") conversionPanel.current?.focus();
+  }, [initialTo]);
   const [amount, setAmount] = useState("100.00");
+  let insufficient = false;
+  try {
+    insufficient = minor(amount, from) > state.balances[from];
+  } catch {
+    /* form validation handles invalid amounts */
+  }
   const [quote, setQuote] = useState<{
     received: number;
     rate: number;
@@ -486,7 +503,12 @@ export function Conversion({
     /* Invalid input is checked by the server. */
   }
   return (
-    <section className="panel">
+    <section
+      className="panel"
+      ref={conversionPanel}
+      tabIndex={-1}
+      aria-label="Currency conversion"
+    >
       <PanelHead
         title="Move between your currencies"
         subtitle="Preview first. Confirm when you’re ready."
@@ -533,7 +555,7 @@ export function Conversion({
           <div className="actions">
             <Button
               secondary
-              disabled={busy}
+              disabled={busy || insufficient}
               onClick={() =>
                 void run(async () => {
                   const revision = key.current;
@@ -553,6 +575,16 @@ export function Conversion({
             </Button>
           </div>
         </div>
+        {insufficient && (
+          <p>
+            Insufficient {from} balance.{" "}
+            {from !== "JOD" && onAddFunds && (
+              <button className="text-link" type="button" onClick={onAddFunds}>
+                Add Funds
+              </button>
+            )}
+          </p>
+        )}
         <div className="conversion-result">
           {quoteNotice && <p role="status">{quoteNotice}</p>}
           <span className="eyebrow">ESTIMATED RECEIVED · BEFORE FEES</span>
@@ -563,10 +595,8 @@ export function Conversion({
                 1 {from} ≈ {(quote.rate / 1000000).toFixed(6)} {to}
               </p>
               <small>
-                {state.authMode === "demo" && state.demoMarketMode !== "live"
-                  ? "Simulated midpoint"
-                  : (quote.method ?? "Indicative provider rate")}{" "}
-                - quote time {time(quote.observedAt ?? quote.fetchedAt)}
+                {quote.method ?? "Indicative provider rate"} - quote time{" "}
+                {time(quote.observedAt ?? quote.fetchedAt)}
                 {quote.source && (
                   <a
                     className="text-link"
@@ -612,77 +642,13 @@ export function Conversion({
             </>
           ) : (
             <p>
-              {state.authMode === "demo" && state.demoMarketMode !== "live"
-                ? "Preview a conversion using explicitly selected sample rates. No money is exchanged."
-                : "A recent provider observation is required. No invented exchange rates."}
+              {
+                "A recent provider observation is required. No invented exchange rates."
+              }
             </p>
           )}
         </div>
       </div>
-    </section>
-  );
-}
-
-export function Sandbox({
-  state,
-  busy,
-  run,
-}: {
-  state: State;
-  busy: boolean;
-  run: Runner;
-}) {
-  const key = useRef(crypto.randomUUID());
-  return (
-    <section className="panel">
-      <PanelHead
-        title="PayPal test payment"
-        subtitle="A separate $1.00 USD test merchant payment. Never credited to this wallet."
-      />
-      <p>
-        {state.capabilities.paypal
-          ? "Use a PayPal test account to approve the payment, then return here to check its status. No real funds move."
-          : "Test payments are currently unavailable. Your wallet features remain available."}
-      </p>
-      <Button
-        secondary
-        disabled={busy || !state.capabilities.paypal}
-        onClick={() =>
-          void run(async () => {
-            const order = await api<{ approvalUrl: string }>("/paypal/orders", {
-              requestId: key.current,
-            });
-            location.assign(order.approvalUrl);
-          }, "Opening PayPal test payment…")
-        }
-      >
-        Continue to PayPal <ArrowUpRight size={16} />
-      </Button>
-      {state.sandbox.map((o) => (
-        <div className="alert-row" key={o.id}>
-          <div>
-            <strong>{o.status} · USD 1.00</strong>
-            <small>
-              Order {o.id}
-              {o.captureId && ` · Capture ${o.captureId}`}
-            </small>
-          </div>
-          {o.status !== "COMPLETED" && o.status !== "CANCELED" && (
-            <Button
-              secondary
-              disabled={busy}
-              onClick={() =>
-                void run(
-                  () => api(`/paypal/${o.id}/capture`, {}),
-                  "Test payment status checked.",
-                )
-              }
-            >
-              Check payment status
-            </Button>
-          )}
-        </div>
-      ))}
     </section>
   );
 }

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Check, Download } from "lucide-react";
 import { currencies, decimal, minor, type Currency } from "../shared/money";
 import type { State, Preferences, Report } from "../shared/types";
@@ -15,15 +15,21 @@ export function SettingsForm({
 }) {
   const [localError, setLocalError] = useState("");
   const p = state.preferences;
+  const [savingsEnabled, setSavingsEnabled] = useState(p.savings === "enabled");
+  const [notificationsEnabled, setNotificationsEnabled] = useState(
+    p.notifications,
+  );
+  useEffect(() => {
+    setSavingsEnabled(p.savings === "enabled");
+    setNotificationsEnabled(p.notifications);
+  }, [p]);
   function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = e.currentTarget;
     try {
-      const increments = { ...p.increments },
-        caps = { ...p.caps };
+      const increments = { ...p.increments };
       for (const c of currencies) {
         increments[c] = minor(field(f, `increment-${c}`), c);
-        caps[c] = minor(field(f, `cap-${c}`), c);
       }
       setLocalError("");
       void save({
@@ -33,7 +39,7 @@ export function SettingsForm({
         frequency: field(f, "frequency") as Preferences["frequency"],
         notifications: field(f, "notifications") === "on",
         increments,
-        caps,
+        caps: p.caps,
       });
     } catch (e) {
       setLocalError((e as Error).message);
@@ -69,7 +75,9 @@ export function SettingsForm({
         <input
           type="checkbox"
           name="enabled"
-          defaultChecked={p.savings === "enabled"}
+          checked={savingsEnabled}
+          onChange={(e) => setSavingsEnabled(e.target.checked)}
+          disabled={busy}
         />
         Automatically allocate round-ups after successful simulated purchases
       </label>
@@ -86,20 +94,6 @@ export function SettingsForm({
                 required
               />
             </label>
-            <label>
-              Maximum automatic savings per purchase
-              <input
-                name={`cap-${c}`}
-                aria-label={`${c} maximum automatic savings per purchase`}
-                aria-describedby={`cap-help-${c}`}
-                inputMode="decimal"
-                defaultValue={decimal(p.caps[c], c)}
-                required
-              />
-            </label>
-            <small id={`cap-help-${c}`}>
-              Limits the round-up saved from each purchase, in {c}.
-            </small>
             <small>
               {c === "ILS"
                 ? "Try 5, 10, or 20 shekels"
@@ -112,22 +106,25 @@ export function SettingsForm({
       </div>
       <p className="footnote">
         Exact multiples save zero. If the available balance cannot cover both
-        the purchase and its round-up, the entire operation is declined. Refunds
-        reverse both entries.
+        the purchase and its round-up, the entire operation is declined.
+        Personal-goal refunds reverse the recorded savings. Circle savings
+        remain locked until an approved return.
       </p>
       <h3 className="section-label">Reports & notifications</h3>
       <label>
         Report frequency
         <select name="frequency" defaultValue={p.frequency}>
-          <option value="weekly">Weekly (rolling 7 days)</option>
-          <option value="monthly">Monthly (rolling 30 days)</option>
+          <option value="weekly">Weekly (7 calendar days)</option>
+          <option value="monthly">Monthly (calendar month)</option>
         </select>
       </label>
       <label className="check">
         <input
           name="notifications"
           type="checkbox"
-          defaultChecked={p.notifications}
+          checked={notificationsEnabled}
+          onChange={(e) => setNotificationsEnabled(e.target.checked)}
+          disabled={busy}
         />
         Enable in-app currency notifications
       </label>
@@ -136,55 +133,6 @@ export function SettingsForm({
           Save preferences <Check size={16} />
         </Button>
       </div>
-    </form>
-  );
-}
-
-export function AuthForm({
-  busy,
-  submit,
-}: {
-  busy: boolean;
-  submit: (email: string, password: string, register: boolean) => Promise<void>;
-}) {
-  const [register, setRegister] = useState(false);
-  return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        void submit(
-          field(e.currentTarget, "email"),
-          field(e.currentTarget, "password"),
-          register,
-        );
-      }}
-    >
-      <label>
-        Email
-        <input name="email" type="email" autoComplete="email" required />
-      </label>
-      <label>
-        Password
-        <input
-          name="password"
-          type="password"
-          minLength={8}
-          autoComplete={register ? "new-password" : "current-password"}
-          required
-        />
-      </label>
-      <Button type="submit" disabled={busy}>
-        {register ? "Create account" : "Sign in"}
-      </Button>
-      <button
-        className="text-link auth-switch"
-        type="button"
-        onClick={() => setRegister(!register)}
-      >
-        {register
-          ? "Already have an account? Sign in"
-          : "New here? Create an account"}
-      </button>
     </form>
   );
 }

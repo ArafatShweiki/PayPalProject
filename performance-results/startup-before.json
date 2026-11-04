@@ -1,0 +1,46 @@
+{
+  "mode": "before",
+  "databaseDelayMs": 30,
+  "transactionCount": 1501,
+  "criticalRequests": 4,
+  "samplesMs": [
+    942,
+    976,
+    964
+  ],
+  "medianMs": 964,
+  "databaseOperations": [
+    27,
+    27,
+    27
+  ],
+  "operations": [
+    "walletwise_initialize_user",
+    "account_state",
+    "profiles",
+    "account_state:write",
+    "profiles",
+    "browser:profiles",
+    "walletwise_initialize_user",
+    "account_state",
+    "profiles",
+    "account_state:write",
+    "profiles",
+    "walletwise_initialize_user",
+    "account_state",
+    "profiles",
+    "account_state:write",
+    "profiles",
+    "profiles",
+    "wallets",
+    "transactions",
+    "transactions",
+    "transactions",
+    "transactions",
+    "savings_rules",
+    "account_state",
+    "profiles",
+    "account_state:write",
+    "funding_orders"
+  ]
+}

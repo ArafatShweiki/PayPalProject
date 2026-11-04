@@ -9,6 +9,16 @@ vi.mock("../server/supabase", () => ({
   readWallets: vi.fn(),
   readTransactions: vi.fn(),
   readSavingsRules: async () => [],
+  getServerSupabase: () => ({
+    rpc: async () => ({ data: [], error: null }),
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          is: () => ({ order: async () => ({ data: [], error: null }) }),
+        }),
+      }),
+    }),
+  }),
 }));
 beforeEach(() => {
   vi.mocked(userRead).mockResolvedValue(initialUser());

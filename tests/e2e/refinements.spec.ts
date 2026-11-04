@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { enterDemo } from "./fixtures";
+import { enterTestWallet } from "./fixtures";
 
 async function navigate(page: Page, name: string) {
   const menu = page.getByRole("button", { name: "Open navigation" });
@@ -12,20 +12,19 @@ async function navigate(page: Page, name: string) {
 test("refined reports, settings, wallet and perspective retain their working flows", async ({
   page,
 }) => {
-  await enterDemo(page);
+  await enterTestWallet(page);
   await navigate(page, "Settings");
+  await expect(
+    page.getByText("Maximum automatic savings per purchase"),
+  ).toHaveCount(0);
   for (const c of ["ILS", "USD", "JOD"])
-    await expect(
-      page.getByLabel(`${c} maximum automatic savings per purchase`),
-    ).toBeVisible();
-  await page
-    .getByLabel("JOD maximum automatic savings per purchase")
-    .fill("0.125");
+    await expect(page.locator(`input[name="increment-${c}"]`)).toBeVisible();
+  await page.locator('input[name="increment-JOD"]').fill("0.125");
   await page.getByRole("button", { name: "Save preferences" }).click();
   await page.reload();
-  await expect(
-    page.getByLabel("JOD maximum automatic savings per purchase"),
-  ).toHaveValue("0.125");
+  await expect(page.locator('input[name="increment-JOD"]')).toHaveValue(
+    "0.125",
+  );
   for (const width of [1440, 820, 390]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.evaluate(() => window.scrollTo(0, 0));
@@ -70,13 +69,13 @@ test("refined reports, settings, wallet and perspective retain their working flo
   await expect(rule.getByText("Estimated additional savings")).toBeVisible();
   const before = await page.evaluate(
     () =>
-      JSON.parse(sessionStorage.getItem("walletwise:developer-demo:v1")!).data
+      JSON.parse(sessionStorage.getItem("test-wallet-fixture")!).data
         .preferences.increments,
   );
   await rule.getByRole("button", { name: "Dismiss", exact: true }).click();
   const after = await page.evaluate(
     () =>
-      JSON.parse(sessionStorage.getItem("walletwise:developer-demo:v1")!).data
+      JSON.parse(sessionStorage.getItem("test-wallet-fixture")!).data
         .preferences.increments,
   );
   expect(after).toEqual(before);
@@ -101,12 +100,10 @@ test("refined reports, settings, wallet and perspective retain their working flo
   await expect(
     page.getByRole("heading", { name: "What does this mean for you?" }),
   ).toBeVisible();
-  await page
-    .locator(".perspective-result")
-    .screenshot({
-      path: "test-results/refined-perspective-result.png",
-      animations: "disabled",
-    });
+  await page.locator(".perspective-result").screenshot({
+    path: "test-results/refined-perspective-result.png",
+    animations: "disabled",
+  });
   await page
     .getByLabel("Comparison period", { exact: true })
     .selectOption("24h");

@@ -281,3 +281,18 @@ it("persists shared Forex snapshots with browser read-only RLS and bucketed hist
     "permission denied",
   );
 });
+
+it("persists report metadata idempotently with service-only writes and owner-isolated reads",async()=>{
+  await db.exec("set role service_role");
+  const sql=`insert into ai_reports(auth0_sub,frequency,report,period_start,period_end,model,prompt_version,input_fingerprint,status)
+    values($1,'monthly','{"source":"Gemini"}','2026-09-01','2026-10-01','configured-model','v2','report-fingerprint','complete')
+    on conflict(auth0_sub,input_fingerprint,status) do update set report=excluded.report`;
+  await db.query(sql,[alice]);await db.query(sql,[alice]);
+  expect(await rows("select count(*)::int as count from ai_reports where auth0_sub=$1 and input_fingerprint='report-fingerprint'",[alice])).toEqual([{count:1}]);
+  await db.exec("set role authenticated");
+  await db.query("select set_config('request.jwt.claims',$1,false)",[JSON.stringify({role:"authenticated",sub:bob})]);
+  expect(await rows("select * from ai_reports where input_fingerprint='report-fingerprint'")).toEqual([]);
+  await expect(db.query(sql,[bob])).rejects.toThrow("permission denied");
+  await db.query("select set_config('request.jwt.claims',$1,false)",[JSON.stringify({role:"authenticated",sub:alice})]);
+  expect(await rows("select model,status from ai_reports where input_fingerprint='report-fingerprint'")).toEqual([{model:"configured-model",status:"complete"}]);
+});

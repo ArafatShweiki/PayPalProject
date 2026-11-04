@@ -22,7 +22,7 @@ export const infoPages: Record<string, InfoPage> = {
       },
       {
         heading: "A prototype with clear boundaries",
-        text: "All wallet funds and exchanges are simulated. Demo Mode records stay in this browser tab and separate from signed-in accounts. Real market rates may be used, or samples can be selected explicitly. PayPal test payments are separate and never fund the wallet. Dream Piggy Bank is not operated by or endorsed by PayPal and does not claim a banking license or regulatory approval.",
+        text: "Wallet balances come from verified PayPal test payments and internal test-wallet activity. They are not real deposits or withdrawable funds. Signing in is required and account records are stored securely. Currency conversions use recorded market observations. Dream Piggy Bank is not operated by or endorsed by PayPal and does not claim a banking license or regulatory approval.",
       },
     ],
   },
@@ -37,7 +37,7 @@ export const infoPages: Record<string, InfoPage> = {
       },
       {
         heading: "Wallet and savings records",
-        text: "Your account may store simulated transactions, savings goals, rules, alerts, reports and PayPal test-payment records. Supabase stores account profiles and wallet records; Firestore or storage on the app server holds other records depending on the deployment. Currency history includes provider quotes and timestamps. Market-data requests send currency symbols, not your wallet balances or identity. Storage location and retention depend on the deployment.",
+        text: "Your account may store simulated transactions, savings goals, rules, alerts, reports and PayPal test-payment records. Supabase also stores circle memberships, contributions, invitation hashes and approval votes. Joining a circle shares your displayed name, circle contribution totals and circle activity with its members; it does not share your private wallet or personal transactions. Invitation previews show only the shared goal details. Shared rate caches and usage counters may use separate server storage. Market-data requests send currency symbols, not wallet balances or identity. Storage location and retention depend on the deployment.",
       },
       {
         heading: "AI report inputs and caching",
@@ -49,7 +49,7 @@ export const infoPages: Record<string, InfoPage> = {
       },
       {
         heading: "Cookies and browser storage",
-        text: "Sign-in uses necessary browser storage and cookies. Demo Mode uses storage for the current tab. Recently loaded account information is kept temporarily in memory and cleared on account changes or sign-out. The app does not install optional analytics or advertising scripts. See the Cookie Policy for details.",
+        text: "Sign-in uses necessary browser storage and cookies. Recently loaded account information is kept temporarily in memory and cleared on account changes or sign-out. The app does not install optional analytics or advertising scripts. See the Cookie Policy for details.",
       },
       {
         heading: "Security, access and correction",
@@ -57,7 +57,7 @@ export const infoPages: Record<string, InfoPage> = {
       },
       {
         heading: "Retention, deletion and contact",
-        text: "Self-service account deletion and a complete automatic retention schedule are not yet available. Exiting Demo Mode clears its local records. Saved reports have a limited archive; underlying account records remain stored. Before public launch, the owner must publish an operator identity, privacy contact and process for access, retention and deletion requests. No support channel is currently available; see Contact.",
+        text: "Self-service account deletion and a complete automatic retention schedule are not yet available. Saved reports have a limited archive; underlying account records remain stored. Before public launch, the owner must publish an operator identity, privacy contact and process for access, retention and deletion requests. No support channel is currently available; see Contact.",
       },
       {
         heading: "Policy updates",
@@ -76,7 +76,7 @@ export const infoPages: Record<string, InfoPage> = {
       },
       {
         heading: "Simulated funds and test payments",
-        text: "Wallet balances, purchases, refunds, round-ups and currency exchanges are simulated. They are not deposits or real funds held by PayPal. PayPal payments use test accounts only and never fund the app wallet. Real payments and withdrawals are not available.",
+        text: "Wallet balances, purchases, refunds, round-ups and currency exchanges are simulated. They are not deposits or real funds held by PayPal. PayPal test payments credit test wallet balances only after server verification. Real payments and withdrawals are not available.",
       },
       {
         heading: "Information and availability",
@@ -120,16 +120,11 @@ export const infoPages: Record<string, InfoPage> = {
   },
   "/cookie-policy": {
     title: "Cookie Policy",
-    intro:
-      "Necessary sign-in storage and local demo storage, described separately.",
+    intro: "Necessary sign-in and account storage.",
     sections: [
       {
         heading: "Sign-in storage",
         text: "Auth0 uses necessary browser storage and cookies to keep you signed in and renew your session. Stored sign-in information may persist after closing the browser until it expires or you sign out. Cookie names and retention depend on the sign-in service settings. Browser storage is separate from cookies.",
-      },
-      {
-        heading: "Demo Mode storage",
-        text: "Demo Mode saves simulated purchases, preferences and goals in the current browser tab. Reloading keeps them; Exit Demo Mode removes them. Some browsers restore tab storage after closing, so use Exit Demo Mode to clear it. Demo Mode is unavailable in production.",
       },
       {
         heading: "In-memory data and legacy cookies",
@@ -141,7 +136,7 @@ export const infoPages: Record<string, InfoPage> = {
       },
       {
         heading: "Manage storage",
-        text: "Use Sign out to end your account session and Exit Demo Mode to remove local demo records. Browser site-data controls can clear stored data and cookies, which may require signing in again. Storage preferences are in Settings. The app cannot clear other services' cookies.",
+        text: "Use Sign out to end your account session to end your account session. Browser site-data controls can clear stored data and cookies, which may require signing in again. Storage preferences are in Settings. The app cannot clear other services' cookies.",
       },
     ],
   },
@@ -152,7 +147,7 @@ export const infoPages: Record<string, InfoPage> = {
     sections: [
       {
         heading: "Simulation and test payments",
-        text: "Wallet operations do not move real funds. Simulated balances are not deposits, safeguarded balances or real funds held by PayPal. PayPal test payments are separate demonstrations only.",
+        text: "Wallet operations do not move real funds. Simulated balances are not deposits, safeguarded balances or real funds held by PayPal. Verified PayPal test payments can credit only the test wallet; they never move real customer funds.",
       },
       {
         heading: "AI and savings estimates",

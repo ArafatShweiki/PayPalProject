@@ -1,8 +1,8 @@
+import { fundedUser } from "./fixtures/user";
 vi.hoisted(() => {
   process.env.DATABASE_PATH = "data/forex-alerts-test.db";
 });
 import { expect, it, vi } from "vitest";
-import { initialUser } from "../shared/ledger";
 import { evaluateAlerts } from "../server/rates";
 import { parseForexQuotes } from "../server/forex";
 const snapshot = (price: string, offset = 0) => {
@@ -17,7 +17,7 @@ const snapshot = (price: string, offset = 0) => {
   );
 };
 it("triggers target crossings once and respects observation deduplication/cooldown", () => {
-  const data = initialUser(true);
+  const data = fundedUser();
   data.preferences.notifications = true;
   data.alerts = [
     {

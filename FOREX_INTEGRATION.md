@@ -8,7 +8,7 @@ The real Twelve Data `/forex_pairs` directory was fetched successfully with `npm
 
 Twelve Data's Forex page describes minute-level updates, with streaming availability depending on instrument/account. API documentation identifies quote requests as one credit per symbol and recommends server-side `Authorization: apikey ...`. Its quote schema supplies a price and timestamp/last-minute quote time, with an optional market-open flag. The adapter labels the source as a provider quote, never as an invented bid, ask or executable midpoint.
 
-**Updated account check:** the subsequently configured local Twelve Data key successfully retrieved both USD/ILS and USD/JOD with HTTP 200. See [DEMO_FOREX_REPORT.md](DEMO_FOREX_REPORT.md) for current verification and demo access. API success does not establish independent price accuracy or contractual display rights. No demo key, hardcoded peg, random price or PMA substitute is used in Twelve Data mode.
+**Updated account check:** the subsequently configured local Twelve Data key successfully retrieved both USD/ILS and USD/JOD with HTTP 200. That was a historical quote check; it was not repeated for the funding change. Current market reads require Auth0 sign-in. API success does not establish independent price accuracy or contractual display rights. No sample key, hardcoded peg, random price or PMA substitute is used in Twelve Data mode.
 
 References: [official Forex product](https://twelvedata.com/forex), [API docs](https://twelvedata.com/docs), [pricing/credits](https://twelvedata.com/pricing), [commercial/personal use](https://support.twelvedata.com/en/articles/5332349-commercial-and-personal-usage), [business display plans](https://twelvedata.com/pricing-business), [WebSocket FAQ](https://support.twelvedata.com/en/articles/5194610-websocket-faq).
 
@@ -60,7 +60,7 @@ Direct and inverse quote legs are supported. For canonical USD quotes, **JOD/ILS
 
 Provider 429, outages, invalid responses and persistence failures retain the last good observations and mark failures explicitly, with increasing retry delays. Configured daily/minute exhaustion is recorded before another request; daily exhaustion waits until the next UTC day. Market open/closed comes from the provider flag; absent flags mean unknown. No holiday calendar or clock-only status is invented. Old/weekend prices may remain visible but stale quotes cannot confirm a conversion. Effective stale age is at least twice the provider poll interval (ten minutes under the five-minute default; three minutes for the one-minute example).
 
-`GET /api/rates/live` returns shared stored snapshots plus safe connection/source/retry status. `src/useMarketFeed.ts` polls every 30 seconds, pauses while hidden, reconnects after errors/online/visibility changes, respects client cooldowns and ignores canceled obsolete reads. Real-rate Developer Demo Mode uses the same polling hook through separate development-only public market endpoints and never calls private market endpoints. Explicit sample mode remains local. Legacy PMA feed reads are less frequent and stay labeled PMA.
+`GET /api/rates/live` returns shared stored snapshots plus safe connection/source/retry status. `src/useMarketFeed.ts` polls every 30 seconds, pauses while hidden, reconnects after errors/online/visibility changes, respects client cooldowns and ignores canceled obsolete reads. The former public development endpoints and sample-rate generators are removed; all wallet market reads use the authenticated shared feed. Legacy PMA feed reads are less frequent and stay labeled PMA.
 
 Fresh observations update wallet currency widgets and charts without a page reload. Only rates and the current account's in-app notices are merged into wallet state by background polling; successful financial mutations still perform the existing full state refresh/invalidation. Alert evaluation has a shared per-snapshot checkpoint and lease; each alert also records its last consumed snapshot to prevent duplicate notices.
 
@@ -82,11 +82,11 @@ Local retention is bounded to 90 days/40,000 snapshots. Supabase retention is an
 
 ## Simulated conversions and alerts
 
-Forex previews retrieve the latest acceptable shared quote, identify source/method/time, explicitly show zero simulated fee and spread, and expire within one minute or the remaining freshness window. Legacy/demo previews retain their five-minute maximum. Confirmation checks expiry, current acceptable source data and the actual approved rate. A changed price requires a new preview/confirmation; a later observation at the same price need not fail solely because the snapshot ID changed.
+Forex previews retrieve the latest acceptable shared quote, identify source/method/time, explicitly show zero simulated fee and spread, and expire within one minute or the remaining freshness window. Legacy PMA previews retain their existing expiry rules. Confirmation checks expiry, current acceptable source data and the actual approved rate. A changed price requires a new preview/confirmation; a later observation at the same price need not fail solely because the snapshot ID changed.
 
 UI previews expire or clear when a received rate changes; this does not auto-execute or silently approve a replacement. Failed/uncertain confirmations keep the existing idempotency behavior. Server confirmations still use atomic balanced postings, enforce sufficient funds, persist quote provenance/rate/snapshot and reject duplicates or altered idempotency payloads. All wallets/conversions remain simulations; no fees, real transfer or payment were added.
 
-Percentage and existing absolute-movement alerts remain supported. New target-rate alerts trigger an actual recorded crossing above/below the configured target. Per-observation duplicate prevention, notifications preferences and the 24-hour cooldown remain in force. A stale or missing quote does not fabricate a crossing. Demo alerts are explicitly local simulated interactions.
+Percentage and existing absolute-movement alerts remain supported. New target-rate alerts trigger an actual recorded crossing above/below the configured target. Per-observation duplicate prevention, notifications preferences and the 24-hour cooldown remain in force. A stale or missing quote does not fabricate a crossing. Alerts belong to the authenticated account and persist in Supabase.
 
 AI inputs use actual deterministic observation calculations, quote/reference timestamps, conversion outcome differences and stored ranges. An optional monitoring threshold is derived deterministically from the largest adjacent recorded percentage change, rounded up to hundredths; it is labeled a monitoring reference, not a forecast. Currency AI is prompted for qualitative text only, and numeric/currency-symbol output is rejected in favor of computed explanations. AI cannot quote an unapproved price, mutate a rule or execute an exchange.
 
@@ -94,7 +94,7 @@ AI inputs use actual deterministic observation calculations, quote/reference tim
 
 New: `shared/market.ts`, `server/forex.ts`, `server/forex-store.ts`, `src/useMarketFeed.ts`, `src/MarketRates.tsx`, `supabase/migrations/202610290001_forex_snapshots.sql`, `supabase/forex-cron.sql`, `scripts/check-forex.ts`, Forex unit/API/component/browser tests, and this report.
 
-Updated: shared types/currency facts, existing rate service/scheduler/API, database-state conversion metadata, currency insight service, App/dashboard/converter/rate UI, demo target-alert handling, styles, `.env.example`, package scripts, README and factual help/privacy source descriptions. Existing authentication, RLS, PayPal, savings calculations and integration identifiers were preserved. No runtime dependency was added.
+Updated: shared types/currency facts, existing rate service/scheduler/API, database-state conversion metadata, currency insight service, App/dashboard/converter/rate UI, styles, `.env.example`, package scripts, README and factual help/privacy source descriptions. Existing authentication, RLS, PayPal, savings calculations and integration identifiers were preserved. No runtime dependency was added.
 
 Final automated results are recorded below. No real payment, authenticated live quote request, cloud migration, Cron deployment or streaming subscription was performed. Known limitations are explicitly stated above rather than claimed as completed external integrations.
 
@@ -104,10 +104,11 @@ Final automated results are recorded below. No real payment, authenticated live 
 - `npm run lint`: passed.
 - `npm test`: **154 passed in 27 files**. Includes provider parsing, future/skewed time rejection, direct/inverse/cross calculations, stale/closed handling, shared polling and unchanged-data deduplication, provider 429/backoff, configured budget exhaustion, missing-key behavior, private alert-feed isolation, atomic/idempotent conversions and overdraft/requote rejection. Existing financial/Auth0/Supabase tests also passed.
 - PostgreSQL/PGlite executes the new migration and verifies stored market history, service-only writes/history function and authenticated read-only RLS. This is not a cloud Supabase smoke test.
-- `npm run test:e2e`: **20 passed**. Covers automatic Forex widget/history updates, reconnect after a simulated outage, unavailable history, mobile overflow, all existing auth/demo/savings/conversion/report/help journeys and carousel interactions.
+- `npm run test:e2e`: **20 passed**. Covers automatic Forex widget/history updates, reconnect after a simulated outage, unavailable history, mobile overflow, all existing authentication, savings, conversion, report and help journeys and carousel interactions.
 - `npm run build`: passed, including TypeScript. Largest JavaScript chunk remains approximately 248 kB; no large-chunk warning.
-- `npm run check:demo-build`: passed. Production omits the demo service/seed/button and forged demo storage cannot open protected content.
 - `npm run check:forex`: passed against the **real public Twelve Data symbol directory**. Confirmed USD/ILS, USD/JOD and their inverses. **Authenticated quote probing was explicitly skipped because no key is configured.** No real received prices, paid entitlements, independent price accuracy, cloud persistence, cloud Cron or provider WebSocket were live-tested.
 - Mobile Forex screenshot was inspected; browser layout tests also cover desktop/tablet/mobile application pages.
 
 The initial SQL migration encoding issue and a test-only shared SQLite file conflict were corrected before these final passing runs. No production data was reset or test counter allowed to authorize a private account.
+
+Current authentication and persistence architecture: [IMPLEMENTATION.md](IMPLEMENTATION.md). Sandbox funding does not change market-data licensing or quote calculations.

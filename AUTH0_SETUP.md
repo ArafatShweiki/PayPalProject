@@ -35,7 +35,7 @@ See [Supabase setup](supabase/README.md) and the [official Auth0 integration gui
 
 ## Environment
 
-Keep `AUTH0_ENABLED=true`, `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_DATABASE_CONNECTION`, `SUPABASE_ENABLED=true`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, server-only `SUPABASE_SECRET_KEY`, and `APP_ORIGIN`. Private APIs always require verified authentication. For local-only frontend exploration, explicitly enable `VITE_ENABLE_DEMO_MODE=true`; production builds exclude it.
+Keep `AUTH0_ENABLED=true`, `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_DATABASE_CONNECTION`, `SUPABASE_ENABLED=true`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, server-only `SUPABASE_SECRET_KEY`, and `APP_ORIGIN`. Private APIs always require verified authentication. No anonymous wallet or alternate authentication provider is available. Apply all database migrations before enabling Supabase.
 
 Remove obsolete `AUTH0_AUDIENCE` and `VITE_AUTH0_AUDIENCE` settings from deployments. They are no longer read. The custom audience was removed from the local environment files and example. Never use a VITE prefix for secret/service-role keys. Restart the application after environment changes and rebuild/redeploy the frontend. Old audience-specific SDK cache entries are not used by the new default-audience session; sign out/in once for fresh claims.
 
@@ -60,3 +60,17 @@ Remove obsolete `AUTH0_AUDIENCE` and `VITE_AUTH0_AUDIENCE` settings from deploym
 ## Automated verification
 
 Run `npm run typecheck`, `npm run lint`, `npm run build`, `npm test`, and `npm run test:e2e`. Auth0/provider responses are mocked in browser tests; server tests verify real locally signed JWTs. PGlite tests execute the migrations and enforce grants/RLS for two opaque string subjects. `npx tsx scripts/check-integrations.ts` performs read-only live connectivity checks.
+
+
+## Checkout is separate from login
+
+The Auth0 `paypal-sandbox` connection stays unchanged. Checkout uses separate server-only Sandbox credentials and merchant verification; see [PAYPAL_FUNDING.md](PAYPAL_FUNDING.md). No identity connection secret is delivered to the browser. Missing Auth0 configuration produces an unavailable sign-in screen; missing Supabase configuration blocks private data access.
+
+
+## Startup and session performance
+
+Normal startup reuses valid SDK ID-token claims and performs one `/api/bootstrap` request. Renewal is coalesced and happens only when claims are missing or close to expiry; its opaque access token is discarded. The token subject must match the SDK user, and the existing authenticated-role check remains. No custom audience, custom token storage or extra authentication callback was introduced.
+
+The former duplicate onboarding call and browser profile probe are removed. The backend verifies the token and scopes its profile/wallet queries to that subject before returning essential data. Browser Supabase SDK configuration and its ID-token callback remain available for explicit direct reads, but startup does not construct that client. RLS, grants and two-user isolation still require verification in the configured database; removing a redundant browser probe is not a change to database authorization.
+
+Session restoration has a recoverable loading timeout. Logout and subject changes clear private caches and cancel old requests; the next user's wallet is not mounted until their provider and bootstrap are ready. See [PERFORMANCE_REPORT.md](PERFORMANCE_REPORT.md).

@@ -1,3 +1,4 @@
+import { profileBootstrap } from "./fixtures/loading";
 import { configureSupabase } from "../src/supabase";
 // @vitest-environment jsdom
 import React from "react";
@@ -40,10 +41,12 @@ beforeEach(() => {
   configureSupabase(null);
   auth.user = undefined;
   auth.logout.mockResolvedValue(undefined);
-  auth.getIdTokenClaims.mockResolvedValue({
+  auth.getIdTokenClaims.mockImplementation(async () => ({
+    sub: auth.user?.sub,
     __raw: "id-token",
     role: "authenticated",
-  });
+    exp: Date.now() / 1000 + 3600,
+  }));
   auth.isLoading = false;
   auth.isAuthenticated = false;
   auth.error = undefined;
@@ -51,16 +54,43 @@ beforeEach(() => {
   vi.stubGlobal(
     "fetch",
     vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ complete: true }), {
-        headers: { "Content-Type": "application/json" },
-      }),
+      new Response(
+        JSON.stringify(
+          profileBootstrap({
+            complete: true,
+            fullName: "Test",
+            email: "fixture@example.invalid",
+            emailVerified: false,
+            preferred: "USD",
+            savings: "disabled",
+            notifications: false,
+          }),
+        ),
+        {
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
     ),
   );
 });
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
   configureSupabase(null);
   vi.unstubAllGlobals();
+});
+it("provides recovery if SDK restoration stalls instead of showing private data or waiting forever", async () => {
+  vi.useFakeTimers();
+  auth.isLoading = true;
+  render(<AuthGate config={config} />);
+  await React.act(async () => {
+    vi.advanceTimersByTime(15001);
+  });
+  expect(
+    screen.getByText("Sign-in is taking longer than expected."),
+  ).toBeTruthy();
+  expect(screen.queryByText("Private wallet")).toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
 });
 it("does not mount private wallet content while loading or signed out", () => {
   auth.isLoading = true;
@@ -202,9 +232,15 @@ it("rejects external and malformed redirect destinations", () => {
   ])
     expect(safeReturnTo(value)).toBe("/#Home");
   expect(safeReturnTo("/#My%20Wallet")).toBe("/#My%20Wallet");
+  const invitation = `/circles/invite/${"a".repeat(43)}`;
+  expect(safeReturnTo(invitation)).toBe(invitation);
+  expect(safeReturnTo(`${invitation}/../settings`)).toBe("/#Home");
+  expect(safeReturnTo(`${invitation}?redirect=https://evil.test`)).toBe(
+    "/#Home",
+  );
 });
 
-it("does not treat an empty or wrong-owner Supabase query as successful authentication", async () => {
+it("blocks private content when the verified backend cannot load the account", async () => {
   auth.isAuthenticated = true;
   auth.user = { sub: "auth0|current" };
   configureSupabase({
@@ -214,21 +250,15 @@ it("does not treat an empty or wrong-owner Supabase query as successful authenti
   vi.stubGlobal(
     "fetch",
     vi.fn(
-      async (input: RequestInfo | URL) =>
-        new Response(
-          JSON.stringify(
-            String(input).includes("supabase.co")
-              ? { auth0_sub: "auth0|other" }
-              : { complete: true },
-          ),
-          { headers: { "Content-Type": "application/json" } },
-        ),
+      async () =>
+        new Response(JSON.stringify({ error: "Account unavailable" }), {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        }),
     ),
   );
   render(<AuthGate config={config} />);
-  expect(
-    await screen.findByText("Your account is temporarily unavailable."),
-  ).toBeTruthy();
+  expect(await screen.findByRole("alert")).toBeTruthy();
   expect(screen.queryByText("Private wallet")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: /^Sign out$/ }));
   await waitFor(() => expect(auth.logout).toHaveBeenCalled());
@@ -247,7 +277,7 @@ it("removes private content when switching accounts until the new onboarding che
   await waitFor(() => expect(screen.queryByText("Private wallet")).toBeNull());
 });
 
-it("loads a returning profile using ID tokens for Supabase and the existing server", async () => {
+it("loads a returning account with one ID-token bootstrap and no redundant browser profile query", async () => {
   auth.isAuthenticated = true;
   auth.user = { sub: "paypal|returning" };
   configureSupabase({
@@ -266,7 +296,15 @@ it("loads a returning profile using ID tokens for Supabase and the existing serv
         JSON.stringify(
           String(input).includes("supabase.co")
             ? { auth0_sub: "paypal|returning" }
-            : { complete: true },
+            : profileBootstrap({
+                complete: true,
+                fullName: "Test",
+                email: "fixture@example.invalid",
+                emailVerified: false,
+                preferred: "USD",
+                savings: "disabled",
+                notifications: false,
+              }),
         ),
         { headers: { "Content-Type": "application/json" } },
       );
@@ -274,12 +312,10 @@ it("loads a returning profile using ID tokens for Supabase and the existing serv
   );
   render(<AuthGate config={config} />);
   expect(await screen.findByText("Private wallet")).toBeTruthy();
-  expect(requests.length).toBeGreaterThanOrEqual(3);
+  expect(requests).toHaveLength(1);
   expect(requests.every((r) => r.bearer === "Bearer id-token")).toBe(true);
-  expect(
-    requests.some((r) => r.url.includes("auth0_sub=eq.paypal%7Creturning")),
-  ).toBe(true);
-  expect(auth.getAccessTokenSilently).toHaveBeenCalledWith();
+  expect(requests[0].url).toBe("/api/bootstrap");
+  expect(auth.getAccessTokenSilently).not.toHaveBeenCalled();
 });
 it("blocks the wallet when ID token renewal fails", async () => {
   auth.isAuthenticated = true;
@@ -288,13 +324,16 @@ it("blocks the wallet when ID token renewal fails", async () => {
     url: "https://example.supabase.co",
     publishableKey: "public-test-key",
   });
+  auth.getIdTokenClaims.mockResolvedValue({
+    __raw: "expired",
+    role: "authenticated",
+    exp: 1,
+  });
   auth.getAccessTokenSilently.mockRejectedValueOnce(
     new Error("login_required"),
   );
   render(<AuthGate config={config} />);
-  expect(
-    await screen.findByText("Your account is temporarily unavailable."),
-  ).toBeTruthy();
+  expect(await screen.findByRole("alert")).toBeTruthy();
   expect(screen.queryByText("Private wallet")).toBeNull();
   expect(fetch).not.toHaveBeenCalled();
 });

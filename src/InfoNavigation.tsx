@@ -27,20 +27,18 @@ export function StoragePreferences() {
     <section className="panel storage-preferences">
       <h2>Storage preferences</h2>
       <p>
-        Only necessary sign-in and local demo storage is used by this
-        application. There are no optional analytics or marketing categories.
+        Only necessary sign-in storage is used by this application. There are no
+        optional analytics or marketing categories.
       </p>
       <details>
         <summary>Review necessary storage</summary>
         <p>
-          Sign-in uses necessary browser storage and cookies. Demo records stay
-          in this browser tab. Recently loaded account information is kept
-          temporarily in memory.
+          Sign-in uses necessary browser storage and cookies. Recently loaded
+          account information is kept temporarily in memory.
         </p>
         <p>
-          Use Sign out or Exit Demo Mode to end the relevant session. Browser
-          site-data controls can remove necessary storage and may require
-          sign-in again.
+          Use Sign out to end your session. Browser site-data controls can
+          remove necessary storage and may require sign-in again.
         </p>
       </details>
       <a className="text-link" href="/cookie-policy">

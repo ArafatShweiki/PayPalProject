@@ -1,4 +1,5 @@
-﻿// @vitest-environment jsdom
+import { fundedUser } from "./fixtures/user";
+// @vitest-environment jsdom
 import React from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import {
@@ -10,7 +11,7 @@ import {
 } from "@testing-library/react";
 import { useMarketFeed } from "../src/useMarketFeed";
 import { MarketRatesPanel } from "../src/MarketRates";
-import { initialUser, balances } from "../shared/ledger";
+import { balances } from "../shared/ledger";
 import type { MarketFeed, Snapshot, State } from "../shared/types";
 vi.mock("../src/api", () => ({ api: vi.fn() }));
 import { api } from "../src/api";
@@ -50,12 +51,8 @@ it("updates automatically and reconnects after a failed request", async () => {
   expect(result.current?.connection).toBe("connected");
   expect(callback).toHaveBeenCalledTimes(2);
 });
-it("keeps demo interactions local without starting a market feed", () => {
-  renderHook(() => useMarketFeed("demo", vi.fn()));
-  expect(api).not.toHaveBeenCalled();
-});
 it("labels actual cross-rates, previous values and provider closures", () => {
-  const data = initialUser(true),
+  const data = fundedUser(),
     at = Math.floor(Date.now() / 1000);
   const observedAt = new Date(at * 1000).toISOString();
   const snapshot: Snapshot = {

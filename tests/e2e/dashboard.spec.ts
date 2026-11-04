@@ -1,9 +1,9 @@
 import { test, expect } from "@playwright/test";
-import { enterDemo } from "./fixtures";
+import { enterTestWallet } from "./fixtures";
 test("bento charts, carousel controls and mobile reduced motion", async ({
   page,
 }) => {
-  await enterDemo(page);
+  await enterTestWallet(page);
   await expect(
     page.getByRole("heading", { name: "Spending activity" }),
   ).toBeVisible();
@@ -47,7 +47,7 @@ test("mouse dragging and native touch swipes inspect goals without changing dest
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await enterDemo(page);
+  await enterTestWallet(page);
   await page.getByRole("button", { name: "Open navigation" }).click();
   await page
     .getByRole("button", { name: "Smart Savings", exact: true })
@@ -87,6 +87,6 @@ test("mouse dragging and native touch swipes inspect goals without changing dest
   );
   await expect(page.locator(".carousel-goal")).toHaveCount(3);
   await expect(page.locator("#selected-goal-details")).toContainText(
-    "Selected destination",
+    "Learning fund",
   );
 });

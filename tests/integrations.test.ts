@@ -1,8 +1,8 @@
+import { fundedUser } from "./fixtures/user";
 import { afterEach, describe, it, expect, vi } from "vitest";
-import { initialUser, purchase } from "../server/ledger";
+import { purchase } from "../server/ledger";
 import { parsePma, evaluateAlerts, stale } from "../server/rates";
 import { buildReport, explain, aiSchema } from "../server/reports";
-import { verifyCapture } from "../server/paypal";
 const html =
   "<table><tr><th>USD/ILS</th><td>3.60</td><td>3.50</td></tr><tr><th>JOD/ILS</th><td>5.1</td><td>5.0</td></tr></table>";
 afterEach(() => {
@@ -22,7 +22,7 @@ describe("PMA and alerts", () => {
       stale(parsePma(html, new Date(Date.now() - 48 * 3600000).toISOString())),
     ).toBe(true));
   it("alerts once, resets reference, respects cooldown and disabled notifications", () => {
-    const d = initialUser(true);
+    const d = fundedUser();
     d.alerts.push({
       id: "a",
       from: "USD",
@@ -47,7 +47,7 @@ describe("PMA and alerts", () => {
     expect(d.notices).toHaveLength(1);
   });
   it("does not evaluate stale snapshots", () => {
-    const d = initialUser(true);
+    const d = fundedUser();
     d.alerts.push({
       id: "a",
       from: "USD",
@@ -64,7 +64,7 @@ describe("PMA and alerts", () => {
 });
 describe("grounded reports", () => {
   it("compares equivalent periods with computed differences and handles a zero baseline", () => {
-    const d = initialUser(true);
+    const d = fundedUser();
     const now = Date.now();
     d.createdAt = new Date(now - 20 * 86400000).toISOString();
     const previous = purchase(d, "ILS", 1000, "Previous", "Other");
@@ -78,11 +78,15 @@ describe("grounded reports", () => {
     expect(report.summaries[1].spendingChangePercent).toBeNull();
   });
   it("calculates impact by replaying purchases and never changes preferences", () => {
-    const d = initialUser(true);
+    const d = fundedUser();
     d.preferences.savings = "enabled";
     purchase(d, "ILS", 2340, "untrusted merchant instruction", "Food & drink");
     const before = JSON.stringify(d.preferences);
-    const { report, recommendations } = buildReport(d, "monthly");
+    const { report, recommendations } = buildReport(
+      d,
+      "monthly",
+      Date.now() + 1000,
+    );
     expect(report.summaries[0].spending).toBe(2340);
     expect(report.summaries[0].savings).toBe(160);
     expect(recommendations[0].additional).toBe(500);
@@ -91,9 +95,9 @@ describe("grounded reports", () => {
   });
   it("falls back when Gemini is down or returns invalid output", async () => {
     vi.stubEnv("GEMINI_API_KEY", "test");
-    const d = initialUser(true);
+    const d = fundedUser();
     purchase(d, "USD", 1235, "Coffee", "Food & drink");
-    const { report } = buildReport(d, "weekly");
+    const { report } = buildReport(d, "weekly", Date.now() + 1000);
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
     expect((await explain(report, [])).source).toBe("deterministic");
     vi.stubGlobal(
@@ -111,33 +115,5 @@ describe("grounded reports", () => {
     expect(() =>
       aiSchema.parse({ observations: ["ok"], changeRule: true }),
     ).toThrow();
-  });
-});
-describe("PayPal verification", () => {
-  const body = (status: string) => ({
-    id: "ORDER",
-    status: "COMPLETED",
-    purchase_units: [
-      {
-        payments: {
-          captures: [
-            {
-              id: "CAPTURE",
-              status,
-              amount: { currency_code: "USD", value: "1.00" },
-            },
-          ],
-        },
-      },
-    ],
-  });
-  it("records completion only for verified capture status and amount", () => {
-    expect(verifyCapture(body("COMPLETED"), "ORDER").status).toBe("COMPLETED");
-    expect(verifyCapture(body("PENDING"), "ORDER").status).toBe("PENDING");
-    expect(verifyCapture(body("DECLINED"), "ORDER").status).toBe("FAILED");
-    expect(() => verifyCapture(body("COMPLETED"), "OTHER")).toThrow();
-    const wrong = body("COMPLETED");
-    wrong.purchase_units[0].payments.captures[0].amount.value = "2.00";
-    expect(() => verifyCapture(wrong, "ORDER")).toThrow();
   });
 });

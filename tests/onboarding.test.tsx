@@ -1,3 +1,4 @@
+import { profileBootstrap } from "./fixtures/loading";
 // @vitest-environment jsdom
 import React from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -10,6 +11,7 @@ import {
 } from "@testing-library/react";
 import { OnboardingBoundary } from "../src/Onboarding";
 import { api } from "../src/api";
+import { ApiError } from "../src/errors";
 import type { OnboardingStatus } from "../shared/types";
 vi.mock("../src/api", () => ({ api: vi.fn() }));
 const initial: OnboardingStatus = {
@@ -46,7 +48,7 @@ it("blocks private content while checking and redirects incomplete deep links", 
     "Getting your profile ready",
   );
   expect(screen.queryByText("Protected dashboard")).toBeNull();
-  resolve(initial);
+  resolve(profileBootstrap(initial) as never);
   await screen.findByLabelText("Full name");
   expect(location.pathname).toBe("/onboarding");
   expect((screen.getByLabelText("Full name") as HTMLInputElement).value).toBe(
@@ -60,9 +62,10 @@ it("blocks private content while checking and redirects incomplete deep links", 
 });
 it("retains input after failed saves and unlocks only after persistence succeeds", async () => {
   vi.mocked(api)
-    .mockResolvedValueOnce(initial)
+    .mockResolvedValueOnce(profileBootstrap(initial))
     .mockRejectedValueOnce(new Error("Save failed"))
-    .mockResolvedValueOnce({ ...initial, complete: true });
+    .mockResolvedValueOnce({ ...initial, complete: true })
+    .mockResolvedValueOnce(profileBootstrap({ ...initial, complete: true }));
   mount();
   fireEvent.change(await screen.findByLabelText("Full name"), {
     target: { value: "Taylor New" },
@@ -87,7 +90,7 @@ it("retains input after failed saves and unlocks only after persistence succeeds
   fireEvent.click(screen.getByRole("button", { name: "Open my wallet" }));
   expect(await screen.findByText("Protected dashboard")).toBeTruthy();
   expect(location.pathname + location.hash).toBe("/#Home");
-  expect(api).toHaveBeenLastCalledWith(
+  expect(api).toHaveBeenCalledWith(
     "/onboarding",
     {
       fullName: "Taylor New",
@@ -100,7 +103,7 @@ it("retains input after failed saves and unlocks only after persistence succeeds
   );
 });
 it("recovers interrupted onboarding on reload and skips completed users", async () => {
-  vi.mocked(api).mockResolvedValue(initial);
+  vi.mocked(api).mockResolvedValue(profileBootstrap(initial));
   const first = mount();
   await screen.findByLabelText("Full name");
   first.unmount();
@@ -108,7 +111,9 @@ it("recovers interrupted onboarding on reload and skips completed users", async 
   await screen.findByLabelText("Full name");
   expect(location.pathname).toBe("/onboarding");
   second.unmount();
-  vi.mocked(api).mockResolvedValue({ ...initial, complete: true });
+  vi.mocked(api).mockResolvedValue(
+    profileBootstrap({ ...initial, complete: true }),
+  );
   mount();
   expect(await screen.findByText("Protected dashboard")).toBeTruthy();
   expect(location.pathname + location.hash).toBe("/#Home");
@@ -116,7 +121,7 @@ it("recovers interrupted onboarding on reload and skips completed users", async 
 it("fails closed on profile errors with retry and sign-out", async () => {
   vi.mocked(api)
     .mockRejectedValueOnce(new Error("Unavailable"))
-    .mockResolvedValueOnce(initial);
+    .mockResolvedValueOnce(profileBootstrap(initial));
   mount();
   await screen.findByRole("alert");
   expect(screen.queryByText("Protected dashboard")).toBeNull();
@@ -127,8 +132,8 @@ it("fails closed on profile errors with retry and sign-out", async () => {
 });
 it("rechecks onboarding if the API denies an already mounted wallet", async () => {
   vi.mocked(api)
-    .mockResolvedValueOnce({ ...initial, complete: true })
-    .mockResolvedValueOnce(initial);
+    .mockResolvedValueOnce(profileBootstrap({ ...initial, complete: true }))
+    .mockResolvedValueOnce(profileBootstrap(initial));
   mount();
   await screen.findByText("Protected dashboard");
   fireEvent(window, new Event("walletwise:onboarding-required"));
@@ -136,4 +141,12 @@ it("rechecks onboarding if the API denies an already mounted wallet", async () =
     expect(screen.queryByText("Protected dashboard")).toBeNull(),
   );
   await screen.findByLabelText("Full name");
+});
+
+it("shows the API failure reason without suggesting another login for setup failures", async () => {
+  const message = "Account setup is incomplete. Please contact the app administrator.";
+  vi.mocked(api).mockRejectedValueOnce(new ApiError(message, 503));
+  mount();
+  expect(await screen.findByRole("alert")).toHaveProperty("textContent", message);
+  expect(screen.queryByText("Protected dashboard")).toBeNull();
 });

@@ -48,7 +48,7 @@ export async function verifyWalletIdentity(token: string) {
   // Namespace identities and hash them for safe SQLite/Firestore keys. Never merge by email.
   return {
     uid: `auth0_${createHash("sha256").update(`${issuer}|${payload.sub}`).digest("hex")}`,
-    sub: payload.sub,
+    sub: payload.sub!,
   };
 }
 

@@ -1,9 +1,9 @@
-import { enterDemo } from "./fixtures";
+import { enterTestWallet } from "./fixtures";
 import { test, expect } from "@playwright/test";
 test("activate once, create a goal, purchase, report, approve a rule, refund, and persist settings", async ({
   page,
 }) => {
-  await enterDemo(page);
+  await enterTestWallet(page);
   await page
     .getByRole("button", { name: "Smart Savings", exact: true })
     .click();
@@ -14,6 +14,7 @@ test("activate once, create a goal, purchase, report, approve a rule, refund, an
   await page.getByRole("button", { name: "New savings goal" }).click();
   await page.getByLabel("Goal name").fill("New laptop");
   await page.getByLabel("Target amount").fill("1500");
+  await page.getByLabel("Make this my default savings goal").check();
   await page
     .getByRole("button", { name: "Create savings goal", exact: true })
     .click();
@@ -31,7 +32,9 @@ test("activate once, create a goal, purchase, report, approve a rule, refund, an
   await page
     .getByRole("button", { name: "Smart Savings", exact: true })
     .click();
-  await expect(page.getByText("₪4.50", { exact: true }).first()).toBeVisible();
+  await expect(
+    page.locator("#selected-goal-details").getByText("₪1.60", { exact: true }),
+  ).toBeVisible();
   await page
     .getByRole("button", { name: "Generate report", exact: true })
     .click();
@@ -59,7 +62,7 @@ test("mobile navigation, persistent opt-out and server validation", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await enterDemo(page);
+  await enterTestWallet(page);
   await page.getByRole("button", { name: "Open navigation" }).click();
   await page
     .getByRole("button", { name: "Smart Savings", exact: true })

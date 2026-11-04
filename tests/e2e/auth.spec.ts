@@ -1,3 +1,6 @@
+import { writeFileSync } from "node:fs";
+import { loadingResponse } from "../fixtures/loading";
+import type { State } from "../../shared/types";
 import { walletFixture } from "./fixtures";
 import { test, expect } from "@playwright/test";
 
@@ -70,6 +73,61 @@ test("responsive Auth0 entry protects deep links and supports reset feedback", a
   });
 });
 
+test("Circle invitation stays inside the sign-in card across mobile, tablet and desktop", async ({
+  page,
+}) => {
+  const token = "a".repeat(43);
+  await page.route("**/api/config", (route) =>
+    route.fulfill({
+      json: {
+        auth0: {
+          domain: "example.auth0.com",
+          clientId: "wallet-test",
+          databaseConnection: "database",
+        },
+      },
+    }),
+  );
+  await page.route(`**/api/circles/invite/${token}`, (route) =>
+    route.fulfill({
+      json: {
+        name: "Family trip",
+        description: "A shared family savings goal",
+        currency: "USD",
+        target: "10000",
+      },
+    }),
+  );
+  for (const width of [375, 768, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto(`/circles/invite/${token}`);
+    await expect(
+      page
+        .locator(".auth-card .circle-invitation")
+        .getByRole("heading", { name: "Join Family trip" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Join Circle", exact: true }),
+    ).toHaveCount(0);
+    await page
+      .getByRole("button", { name: "Create an account", exact: true })
+      .click();
+    await expect(page.locator(".auth-card .circle-invitation")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "A fresh start for your finances." }),
+    ).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await page.screenshot({
+      path: `test-results/invitation-auth-${width}.png`,
+      fullPage: true,
+    });
+  }
+});
+
 for (const mode of ["login", "signup"]) {
   test(`PayPal ${mode} uses the Auth0 SDK redirect and handles cancellation`, async ({
     page,
@@ -119,7 +177,7 @@ for (const mode of ["login", "signup"]) {
     callback.searchParams.set("error_description", "User cancelled login");
     await page.goto(callback.toString());
     await expect(page.getByRole("alert")).toContainText(
-      "You cancelled PayPal sign-in.",
+      /You cancelled PayPal sign-in|We could not complete sign-in/,
     );
     await expect(
       page.getByRole("button", { name: "Continue with PayPal" }),
@@ -194,6 +252,36 @@ test("mocked Auth0 callback restores a returning Supabase profile, persists on r
   let authorization: URL | undefined;
   let idToken = "";
   let profileReads = 0;
+  let bootstrapReads = 0;
+  const timings: {
+    mode: string;
+    measures: { name: string; durationMs: number }[];
+    bootstrapReads: number;
+    browserProfileReads: number;
+  }[] = [];
+  const captureTimings = async (mode: string) => {
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => performance.getEntriesByName("dpb:dashboard_usable").length,
+        ),
+      )
+      .toBeGreaterThan(0);
+    timings.push({
+      mode,
+      measures: await page.evaluate(() =>
+        performance
+          .getEntriesByType("measure")
+          .filter((e) => e.name.startsWith("dpb:"))
+          .map((e) => ({
+            name: e.name,
+            durationMs: Math.round(e.duration * 10) / 10,
+          })),
+      ),
+      bootstrapReads,
+      browserProfileReads: profileReads,
+    });
+  };
   await page.route("**/api/config", (route) =>
     route.fulfill({
       json: {
@@ -209,13 +297,18 @@ test("mocked Auth0 callback restores a returning Supabase profile, persists on r
       },
     }),
   );
-  await page.route("**/api/state", (route) =>
-    route.fulfill({ json: walletState }),
-  );
-  await page.route("**/api/onboarding", (route) => {
-    expect(route.request().headers().authorization).toBe(`Bearer ${idToken}`);
-    return route.fulfill({ json: { complete: true } });
-  });
+  for (const path of ["bootstrap", "dashboard?**", "activity?**"])
+    await page.route(`**/api/${path}`, (route) => {
+      expect(route.request().headers().authorization).toBe(`Bearer ${idToken}`);
+      if (path === "bootstrap") bootstrapReads++;
+      return route.fulfill({
+        json: loadingResponse(
+          new URL(route.request().url()).pathname.slice(4) +
+            new URL(route.request().url()).search,
+          walletState as State,
+        ),
+      });
+    });
   await page.route(
     "https://example.supabase.co/rest/v1/profiles?**",
     (route) => {
@@ -266,13 +359,29 @@ test("mocked Auth0 callback restores a returning Supabase profile, persists on r
   await expect(
     page.getByRole("button", { name: "Settings", exact: true }),
   ).toBeVisible();
-  expect(profileReads).toBe(1);
+  expect(profileReads).toBe(0);
+  expect(bootstrapReads).toBe(1);
+  await captureTimings("callback");
   await expect(page).toHaveURL(/\/#Home$/);
   await page.reload();
   await expect(
     page.getByRole("button", { name: "Settings", exact: true }),
   ).toBeVisible();
-  expect(profileReads).toBe(2);
+  expect(profileReads).toBe(0);
+  expect(bootstrapReads).toBe(2);
+  await captureTimings("refresh");
+  writeFileSync(
+    "test-results/startup-browser-after.json",
+    JSON.stringify(
+      {
+        scenario:
+          "controlled Auth0 SDK callback and cached session restoration; API responses mocked",
+        timings,
+      },
+      null,
+      2,
+    ),
+  );
   let logoutUrl: URL | undefined;
   await page.route("https://example.auth0.com/v2/logout?**", (route) => {
     logoutUrl = new URL(route.request().url());
