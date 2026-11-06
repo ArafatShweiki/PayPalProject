@@ -2,25 +2,23 @@ import { getServerSupabase, supabaseEnabled, readProfile } from "./supabase";
 import "./env";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { initializeApp, cert, getApps } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
+import {
+  backendStorage,
+  currentGuards,
+  sqlStorage,
+  storageMode,
+} from "./backend-storage";
 import type { UserData, Snapshot } from "../shared/types";
 import { initialUser } from "./ledger";
-export const firebaseEnabled = !!process.env.FIREBASE_SERVICE_ACCOUNT;
-if (firebaseEnabled && !getApps().length)
-  initializeApp({
-    credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT!)),
-  });
-export const cloud = process.env.STORAGE === "firestore";
-if (cloud && !firebaseEnabled)
+if (!["supabase", "sqlite"].includes(storageMode()))
   throw new Error(
-    "STORAGE=firestore requires FIREBASE_SERVICE_ACCOUNT for auxiliary data and rate history.",
+    "Unsupported STORAGE adapter. Apply the backend storage migration and use STORAGE=supabase; SQLite is local/test only.",
   );
-if (process.env.VERCEL && !cloud)
+if (process.env.VERCEL && (!sqlStorage() || !supabaseEnabled()))
   throw new Error(
-    "Vercel requires STORAGE=firestore and FIREBASE_SERVICE_ACCOUNT for durable auxiliary data and rate history, including when Supabase stores wallet balances.",
+    "Vercel requires Supabase-only storage with SUPABASE_ENABLED=true.",
   );
-const db = cloud
+const db = sqlStorage()
   ? null
   : await (async () => {
       const { DatabaseSync } = await import("node:sqlite");
@@ -34,10 +32,7 @@ const db = cloud
       return db;
     })();
 export async function read<T>(id: string): Promise<T | undefined> {
-  if (cloud) {
-    return (await getFirestore().collection("walletwise").doc(id).get()).data()
-      ?.value as T | undefined;
-  }
+  if (sqlStorage()) return backendStorage.read<T>(id);
   const row = db!.prepare("SELECT value FROM records WHERE id=?").get(id) as
     { value: string } | undefined;
   return row ? JSON.parse(row.value) : undefined;
@@ -47,15 +42,7 @@ export async function update<T, R>(
   initial: () => T,
   fn: (data: T) => R,
 ): Promise<R> {
-  if (cloud)
-    return getFirestore().runTransaction(async (tx) => {
-      const ref = getFirestore().collection("walletwise").doc(id);
-      const doc = await tx.get(ref);
-      const data = (doc.data()?.value ?? initial()) as T;
-      const result = fn(data);
-      tx.set(ref, { value: JSON.parse(JSON.stringify(data)) });
-      return result;
-    });
+  if (sqlStorage()) return backendStorage.update(id, initial, fn);
   db!.exec("BEGIN IMMEDIATE");
   try {
     const row = db!.prepare("SELECT value FROM records WHERE id=?").get(id) as
@@ -114,6 +101,13 @@ export async function userUpdate<R>(
         notifications: profile.currency_notifications,
       });
     const result = fn(state);
+    if (sqlStorage() && currentGuards().length) {
+      if (
+        await backendStorage.accountCas(uid, sub, row?.version ?? null, state)
+      )
+        return result;
+      continue;
+    }
     const write = row
       ? await client
           .from("account_state")
@@ -170,7 +164,7 @@ export async function userRead(
 export const snapshots = async (): Promise<Snapshot[]> =>
   process.env.MARKET_DATA_PROVIDER === "twelve"
     ? (await import("./forex-store")).readForexSnapshots()
-    : ((await read<Snapshot[]>("rates")) ?? []);
+    : (await import("./forex-store")).readPmaSnapshots();
 export async function users(): Promise<string[]> {
   if (!supabaseEnabled()) return [];
   const result: string[] = [];

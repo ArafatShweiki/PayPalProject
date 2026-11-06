@@ -2,6 +2,11 @@
 import type { RequestHandler } from "express";
 import { isIP } from "node:net";
 import { update } from "./store";
+import {
+  backendStorage,
+  BackendLeaseBusy,
+  sqlStorage,
+} from "./backend-storage";
 export class ServiceError extends Error {
   constructor(
     message: string,
@@ -36,8 +41,7 @@ export function consumeCounter(
     retryAfter: Math.max(1, Math.ceil((bucket.reset - now) / 1000)),
   };
 }
-// Shared store transactions are Firestore in serverless deployments and SQLite locally.
-// Fixed shards bound record growth; expired identities are pruned on every access.
+// PostgreSQL owns distributed counters. SQLite is an isolated local/test adapter.
 export async function consumeLimit(
   scope: string,
   identity: string,
@@ -45,6 +49,7 @@ export async function consumeLimit(
   windowMs = 60000,
 ) {
   const key = fingerprint(identity);
+  if (sqlStorage()) return backendStorage.consume(scope, key, limit, windowMs);
   return update<Record<string, Counter>, ReturnType<typeof consumeCounter>>(
     `limit_${scope}_${key.slice(0, 2)}`,
     () => ({}),
@@ -117,10 +122,26 @@ export const limitMiddleware =
 export async function withLease<T>(
   scope: string,
   slots: number,
-  work: () => Promise<T>,
+  work: (lease?: { renew: () => Promise<void> }) => Promise<T>,
   duration = 30000,
 ): Promise<T> {
   const owner = randomUUID();
+  if (sqlStorage()) {
+    try {
+      return await backendStorage.withLease(
+        fingerprint(scope),
+        slots,
+        work,
+        duration,
+      );
+    } catch (error) {
+      // Provider refresh services already recognize ServiceError contention and
+      // return their last-good observations. Preserve that established contract.
+      if (error instanceof BackendLeaseBusy)
+        throw new ServiceError(error.message, error.status, error.retryAfter);
+      throw error;
+    }
+  }
   await update<Record<string, number>, void>(
     `lease_${fingerprint(scope)}`,
     () => ({}),
@@ -171,36 +192,58 @@ export async function remember<T>(
       cached: boolean;
     }>;
   const load = async () => {
-    const hit = await update<{ record?: Memo<T> }, Memo<T> | undefined>(
-      id,
-      () => ({}),
-      (state) => {
-        if (state.record?.key === key && state.record.expires > Date.now())
-          return state.record;
-        delete state.record;
-        return undefined;
-      },
-    );
-    if (hit)
-      return { value: hit.value, generatedAt: hit.generatedAt, cached: true };
-    return withLease(id, 1, async () => {
-      const value = await work(),
-        generatedAt = new Date().toISOString();
-      if (reusable(value))
-        await update<{ record?: Memo<T> }, void>(
+    const valid = (record?: Memo<T>) =>
+      record?.key === key && record.expires > Date.now() ? record : undefined;
+    const hit = sqlStorage()
+      ? valid((await backendStorage.read<{ record?: Memo<T> }>(id))?.record)
+      : await update<{ record?: Memo<T> }, Memo<T> | undefined>(
           id,
           () => ({}),
           (state) => {
-            state.record = {
-              key,
-              expires: Date.now() + ttl,
-              generatedAt,
-              value,
-            };
+            if (state.record?.key === key && state.record.expires > Date.now())
+              return state.record;
+            delete state.record;
+            return undefined;
           },
         );
-      return { value, generatedAt, cached: false };
-    });
+    if (hit)
+      return { value: hit.value, generatedAt: hit.generatedAt, cached: true };
+    return withLease(
+      id,
+      1,
+      async () => {
+        // Another instance may have published between the initial read and our
+        // acquisition. Avoid a duplicate provider call after waiting for ownership.
+        if (sqlStorage()) {
+          const fresh = valid(
+            (await backendStorage.read<{ record?: Memo<T> }>(id))?.record,
+          );
+          if (fresh)
+            return {
+              value: fresh.value,
+              generatedAt: fresh.generatedAt,
+              cached: true,
+            };
+        }
+        const value = await work(),
+          generatedAt = new Date().toISOString();
+        if (reusable(value))
+          await update<{ record?: Memo<T> }, void>(
+            id,
+            () => ({}),
+            (state) => {
+              state.record = {
+                key,
+                expires: Date.now() + ttl,
+                generatedAt,
+                value,
+              };
+            },
+          );
+        return { value, generatedAt, cached: false };
+      },
+      120000,
+    );
   };
   const promise = load().finally(() => pending.delete(pendingKey));
   pending.set(pendingKey, promise);

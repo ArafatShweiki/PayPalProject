@@ -36,13 +36,12 @@ it("fails closed when a Vercel instance lacks authenticated durable storage", ()
     ...valid,
     VERCEL: "1",
     APP_ORIGIN: "https://wallet.example",
-    STORAGE: "firestore",
-    FIREBASE_SERVICE_ACCOUNT: "configured",
+    STORAGE: "supabase",
   };
   expect(() => validateDeploymentConfiguration(env)).not.toThrow();
   for (const patch of [
     { STORAGE: "sqlite" },
-    { FIREBASE_SERVICE_ACCOUNT: "" },
+    { STORAGE: "firestore" },
     { AUTH0_ENABLED: "false" },
     { SUPABASE_ENABLED: "false" },
   ])

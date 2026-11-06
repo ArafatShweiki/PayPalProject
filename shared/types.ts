@@ -240,6 +240,7 @@ export type State = UserData & {
   savingsBalances: Balances;
   snapshots: Snapshot[];
   ratesError?: string;
+  // Deprecated response field retained as false for existing client compatibility.
   capabilities: { firebase: boolean; paypal: boolean; gemini: boolean };
   authMode: "auth0";
 };

@@ -1,3 +1,5 @@
+> Historical report: Firebase/Firestore deployment requirements below have been superseded by [SUPABASE_ONLY_MIGRATION.md](SUPABASE_ONLY_MIGRATION.md). Use the current Vercel deployment guide.
+
 # Dream Piggy Bank: authenticated accounts and Sandbox funding
 
 Implemented 30 October 2026 in the existing application. The design, Auth0 email/PayPal connection, Supabase authorization model, financial precision, purchase round-ups and Forex conversion model remain in place. No cloud database was reset, no actual user records were deleted, no deployment was published and no live PayPal payments were enabled.

@@ -6,6 +6,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { changePercent, rateUnits, convert, money } from "../shared/money";
 import type { Snapshot, UserData } from "../shared/types";
 import { read, snapshots, update, userUpdate, users } from "./store";
+import { persistPma } from "./forex-store";
 export const PMA_URL = "https://wcur.pma.ps/webtools/currency/embed";
 export const rateStaleMs = () =>
   forexEnabled()
@@ -115,44 +116,37 @@ export async function refreshRates(): Promise<Snapshot[]> {
       });
     return pending;
   }
-  pending = withLease("pma-refresh", 1, async () => {
-    const prior = await snapshots();
-    if (
-      prior.length &&
-      Date.now() - Date.parse(prior.at(-1)!.fetchedAt) <
-        setting("RATE_CACHE_TTL_MS", 6 * 60 * 60 * 1000)
-    )
-      return prior;
-    const res = await fetch(PMA_URL, {
-      signal: AbortSignal.timeout(12000),
-      headers: { "User-Agent": "dream-piggy-bank/1.0" },
-    });
-    if (!res.ok) throw new Error("PMA is currently unavailable.");
-    const snapshot = parsePma(await res.text());
-    const all = await update<Snapshot[], Snapshot[]>(
-      "rates",
-      () => [],
-      (list) => {
-        if (
-          !list.length ||
-          Date.now() - Date.parse(list.at(-1)!.fetchedAt) >=
-            setting("RATE_CACHE_TTL_MS", 6 * 60 * 60 * 1000)
-        )
-          list.push(snapshot);
-        if (list.length > 366) list.splice(0, list.length - 366);
-        return list;
-      },
-    );
-    await processAlerts(snapshot);
-    return all;
-  }).finally(() => {
+  pending = withLease(
+    "pma-refresh",
+    1,
+    async (lease) => {
+      const prior = await snapshots();
+      if (
+        prior.length &&
+        Date.now() - Date.parse(prior.at(-1)!.fetchedAt) <
+          setting("RATE_CACHE_TTL_MS", 6 * 60 * 60 * 1000)
+      )
+        return prior;
+      const res = await fetch(PMA_URL, {
+        signal: AbortSignal.timeout(12000),
+        headers: { "User-Agent": "dream-piggy-bank/1.0" },
+      });
+      if (!res.ok) throw new Error("PMA is currently unavailable.");
+      const snapshot = parsePma(await res.text());
+      const all = await persistPma(snapshot);
+      await processAlerts(snapshot, lease?.renew);
+      return all;
+    },
+    120000,
+  ).finally(() => {
     pending = undefined;
   });
   return pending;
 }
 
-async function processAlerts(snapshot: Snapshot) {
+async function processAlerts(snapshot: Snapshot, renew?: () => Promise<void>) {
   for (const uid of await users()) {
+    await renew?.();
     const existing = await userUpdate(uid, (data) => data);
     const profile =
       supabaseEnabled() && existing.auth0Sub
@@ -172,21 +166,26 @@ async function processForexAlerts(snapshot: Snapshot) {
   )
     return;
   try {
-    await withLease("forex-alert-evaluation", 1, async () => {
-      if (
-        (await read<{ id: string }>("forex_alerts_checkpoint"))?.id ===
-        snapshot.id
-      )
-        return;
-      await processAlerts(snapshot);
-      await update<{ id: string }, void>(
-        "forex_alerts_checkpoint",
-        () => ({ id: "" }),
-        (current) => {
-          current.id = snapshot.id;
-        },
-      );
-    });
+    await withLease(
+      "forex-alert-evaluation",
+      1,
+      async (lease) => {
+        if (
+          (await read<{ id: string }>("forex_alerts_checkpoint"))?.id ===
+          snapshot.id
+        )
+          return;
+        await processAlerts(snapshot, lease?.renew);
+        await update<{ id: string }, void>(
+          "forex_alerts_checkpoint",
+          () => ({ id: "" }),
+          (current) => {
+            current.id = snapshot.id;
+          },
+        );
+      },
+      120000,
+    );
   } catch (error) {
     if (!(error instanceof Error && "status" in error && error.status === 429))
       throw error;

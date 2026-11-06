@@ -20,6 +20,7 @@ import {
 import { DatabaseError } from "./database-errors";
 import { databaseState } from "./database-state";
 import "./env";
+import { backendStorage, sqlStorage } from "./backend-storage";
 import {
   applicationOrigin,
   validateDeploymentConfiguration,
@@ -34,13 +35,7 @@ import { z } from "zod";
 import { currencies, minor, convert } from "../shared/money";
 import type { Entry, Preferences, UserData } from "../shared/types";
 import { append, balances, idempotent } from "./ledger";
-import {
-  firebaseEnabled,
-  userRead,
-  userUpdate,
-  snapshots,
-  registerUserIdentity,
-} from "./store";
+import { userRead, userUpdate, snapshots, registerUserIdentity } from "./store";
 import { refreshRates, stale, rateStaleMs } from "./rates";
 
 import { currencyInsight } from "./currency-insights";
@@ -138,6 +133,7 @@ app.get("/api/cron", async (req, res) => {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
+  if (sqlStorage()) await backendStorage.cleanup();
   await refreshRates();
   res.json({ ok: true });
 });
@@ -330,7 +326,7 @@ app.get("/api/state", async (_req, res) => {
       rateStaleMs: rateStaleMs(),
       authMode: "auth0",
       capabilities: {
-        firebase: firebaseEnabled,
+        firebase: false,
         paypal: fundingEnabled(),
         gemini: !!process.env.GEMINI_API_KEY,
       },
@@ -348,7 +344,7 @@ app.get("/api/state", async (_req, res) => {
     rateStaleMs: rateStaleMs(),
     authMode: res.locals.authMode,
     capabilities: {
-      firebase: firebaseEnabled,
+      firebase: false,
       paypal: fundingEnabled(),
       gemini: !!process.env.GEMINI_API_KEY,
     },
@@ -924,7 +920,11 @@ app.use(
       return;
     }
     if (err instanceof ServiceError || err instanceof DatabaseError) {
-      if (err instanceof ServiceError && err.retryAfter)
+      if (
+        "retryAfter" in err &&
+        typeof err.retryAfter === "number" &&
+        err.retryAfter
+      )
         res.setHeader("Retry-After", err.retryAfter);
       res
         .status(err.status)

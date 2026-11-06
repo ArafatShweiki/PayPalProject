@@ -1,3 +1,5 @@
+> Historical report: Firebase/Firestore deployment requirements below have been superseded by [SUPABASE_ONLY_MIGRATION.md](SUPABASE_ONLY_MIGRATION.md). Use the current Vercel deployment guide.
+
 > Historical audit (2026-10-26). Authentication and live connectivity findings are superseded by [AUTH0_SETUP.md](AUTH0_SETUP.md), updated 2026-10-27. The app no longer requests an Auth0 custom API audience.
 
 # Dream Piggy Bank technical audit � 2026-10-26

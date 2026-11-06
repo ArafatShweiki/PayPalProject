@@ -42,9 +42,9 @@ export function validateDeploymentConfiguration(env: NodeJS.ProcessEnv) {
       "Vercel requires AUTH0_ENABLED=true and SUPABASE_ENABLED=true.",
     );
   validateSupabaseConfiguration(env);
-  if (env.STORAGE !== "firestore" || !env.FIREBASE_SERVICE_ACCOUNT)
+  if (env.STORAGE && env.STORAGE !== "supabase")
     throw new Error(
-      "Vercel requires STORAGE=firestore and private FIREBASE_SERVICE_ACCOUNT for shared request protection.",
+      "Vercel requires STORAGE=supabase (or unset) for shared request protection. Local SQLite is not supported on Vercel.",
     );
 }
 

@@ -267,7 +267,7 @@ test("goal setup, ILS to USD saving, direct invitation, two-member voting and lo
     async (route) => {
       await route.fulfill({
         contentType: "text/html",
-        body: `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="root"></div><script type="module">import RefreshRuntime from '/@react-refresh';RefreshRuntime.injectIntoGlobalHook(window);window.$RefreshReg$=()=>{};window.$RefreshSig$=()=>type=>type;window.__vite_plugin_react_preamble_installed__=true;const {default:React}=await import('/node_modules/.vite/deps/react.js');const {default:{createRoot}}=await import('/node_modules/.vite/deps/react-dom_client.js');const {setAuth0TokenProvider}=await import('/src/api.ts');setAuth0TokenProvider(async()=>"test-fixture-token");const {App}=await import('/src/App.tsx');await import('/src/styles.css');createRoot(document.getElementById('root')).render(React.createElement(App));</script></body></html>`,
+        body: `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="root"></div><script type="module">import RefreshRuntime from '/@react-refresh';RefreshRuntime.injectIntoGlobalHook(window);window.$RefreshReg$=()=>{};window.$RefreshSig$=()=>type=>type;window.__vite_plugin_react_preamble_installed__=true;const {React,createRoot}=await import('/tests/fixtures/browser.tsx');const {setAuth0TokenProvider}=await import('/src/api.ts');setAuth0TokenProvider(async()=>"test-fixture-token");const {App}=await import('/src/App.tsx');await import('/src/styles.css');createRoot(document.getElementById('root')).render(React.createElement(App));</script></body></html>`,
       });
     },
   );

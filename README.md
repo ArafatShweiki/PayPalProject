@@ -34,7 +34,7 @@ There is no anonymous wallet, development login bypass, sample-data selector or 
 | `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_MERCHANT_ID` | Separate Sandbox Checkout application and its merchant. These are independent of Auth0 PayPal login. |
 | `PAYPAL_FUNDING_CURRENCIES=USD` | Explicit merchant-tested funding currencies. Add `ILS` only after a successful merchant test. Never include JOD. |
 | `FUNDING_MAX_MINOR=500000`, `RATE_LIMIT_FUNDING=10` | Per-order maximum in minor units and per-user funding requests per minute. Minimum is 100 minor units. |
-| `STORAGE=sqlite`, `DATABASE_PATH` | Shared market caches, quota counters and leases only. Use `STORAGE=firestore` and `FIREBASE_SERVICE_ACCOUNT` for durable shared cache coordination on serverless deployments. |
+| `STORAGE=supabase` (or unset) | All deployed shared caches, quotas, leases and history use Supabase. Explicit `STORAGE=sqlite` and `DATABASE_PATH` are isolated local/test settings only. |
 
 No integration secret may use a `VITE_` prefix. Optional Forex and Gemini settings remain documented in `.env.example`; the existing server-side provider caches and quotas are preserved. Auth0 browser identifiers and the Supabase publishable key are public configuration, not privileged credentials.
 
@@ -88,3 +88,7 @@ No cloud migration, deployment or live financial service is enabled by this chan
 ## Vercel deployment
 
 See [VERCEL_DEPLOYMENT.md](VERCEL_DEPLOYMENT.md) for this repository's deployment settings, required credentials, database migrations, provider configuration, validation results and rollout checklist. Do not use SQLite storage on Vercel.
+
+## Supabase-only shared storage
+
+Firebase Admin/Firestore is removed. Apply `202611060001_backend_storage.sql` after the existing migrations before deployment. Use [SUPABASE_ONLY_MIGRATION.md](SUPABASE_ONLY_MIGRATION.md) for the storage inventory, preserved local data, dry-run imports, security design and rollback, and [SUPABASE_ONLY_VALIDATION.md](SUPABASE_ONLY_VALIDATION.md) for actual verification. Run `npm run test:postgres` for real PostgreSQL concurrency tests with independent connections; no hosted credentials are used.

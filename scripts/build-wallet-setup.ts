@@ -76,6 +76,10 @@ END $preflight$;
 const body = sources
   .map((source, i) => {
     let sql = source;
+    // Individual migrations can be atomic on their own. The guarded bootstrap
+    // already owns its outer transaction and must not commit it mid-install.
+    if (files[i] === "202611060001_backend_storage.sql")
+      sql = sql.replace(/^BEGIN;\r?\n|^COMMIT;\r?\n?/gm, "");
     if (files[i] === "202610260001_walletwise_core.sql") {
       // Do not change unrelated private-schema ACLs or defaults for future objects.
       // All new app functions/tables have explicit REVOKE/GRANT statements below.

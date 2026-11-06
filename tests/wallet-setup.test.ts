@@ -32,10 +32,13 @@ it("preserves existing forex rows, index, function and policies while installing
   );
   const defaults = await db.query("select * from pg_default_acl order by oid");
   await db.exec(setup);
-  expect(
-    (await db.query("select *,tableoid::oid as table_oid from forex_snapshots"))
-      .rows,
-  ).toEqual(before.rows);
+  const after = (
+    await db.query<Record<string, unknown> & { provider: string }>(
+      "select *,tableoid::oid as table_oid from forex_snapshots",
+    )
+  ).rows;
+  expect(after.map(({ provider: _, ...row }) => row)).toEqual(before.rows);
+  expect(after.map((row) => row.provider)).toEqual(["twelve"]);
   expect(
     (await db.query("select * from pg_default_acl order by oid")).rows,
   ).toEqual(defaults.rows);

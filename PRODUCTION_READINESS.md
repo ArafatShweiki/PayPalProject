@@ -7,7 +7,7 @@ This application is an authenticated **test wallet**. Sandbox payment verificati
 - Configure the existing Auth0 application, callback/logout/web-origin allowlists, email database connection and `paypal-sandbox` connection. Google remains disabled. Confirm the authenticated role claim and the Supabase Third-Party Auth issuer configuration.
 - Point the server at the intended Supabase project and apply all migrations in order, without reset. Enable Supabase only once schema/grants are ready. RLS must remain enabled; browser roles must not receive balance mutation grants.
 - Configure a separate Sandbox Checkout merchant/application and merchant ID. Verify USD and explicitly verify ILS before advertising it for that merchant. Keep JOD conversion-only. Secrets must remain server-side.
-- Set the exact frontend `APP_ORIGIN`. On Vercel use the existing Firestore-backed shared provider cache, quota and lease configuration; ephemeral SQLite is not a durable multi-instance cache. Private account data stays in Supabase.
+- Set the exact frontend `APP_ORIGIN`. On Vercel use STORAGE=supabase and apply 202611060001_backend_storage.sql for shared caches, quotas and fenced leases; SQLite is local/test only. Private account data stays in Supabase.
 
 ## Current external check
 

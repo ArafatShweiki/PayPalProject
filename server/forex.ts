@@ -137,136 +137,141 @@ async function providerQuote(symbol: string) {
 let pending: Promise<Snapshot[]> | undefined;
 export async function refreshForex(): Promise<Snapshot[]> {
   if (pending) return pending;
-  pending = withLease("twelve-provider", 1, async () => {
-    if (!process.env.TWELVE_DATA_API_KEY)
-      throw new ServiceError(
-        "Configure the server-side TWELVE_DATA_API_KEY to receive Forex market data.",
-      );
-    const credentialHash = createHash("sha256")
-      .update(process.env.TWELVE_DATA_API_KEY)
-      .digest("hex");
-    const status = await read<InternalStatus>(STATUS);
-    if (
-      status?.credentialHash === credentialHash &&
-      status.nextAttemptAt &&
-      Date.parse(status.nextAttemptAt) > Date.now()
-    )
-      return readForexSnapshots();
-    const now = Date.now(),
-      day = new Date(now).toISOString().slice(0, 10),
-      minute = Math.floor(now / 60000);
-    const reservation = await update<
-      InternalStatus,
-      { allowed: boolean; retryAfter: number }
-    >(
-      STATUS,
-      () => ({}),
-      (current) => {
-        if (current.day !== day) {
-          current.day = day;
-          current.dayCredits = 0;
-        }
-        if (current.minute !== minute) {
-          current.minute = minute;
-          current.minuteCredits = 0;
-        }
-        const daily =
-          (current.dayCredits ?? 0) + 2 >
-          setting("TWELVE_DATA_DAILY_CREDITS", 800);
-        const minuteLimited =
-          (current.minuteCredits ?? 0) + 2 >
-          setting("TWELVE_DATA_MINUTE_CREDITS", 8);
-        if (daily || minuteLimited) {
-          const reset = daily
-            ? Date.parse(day) + 86400000
-            : (minute + 1) * 60000;
-          current.nextAttemptAt = new Date(reset).toISOString();
-          current.connection = "unavailable";
-          current.error =
-            "Configured Forex provider budget exhausted. Retaining recorded quotes.";
-          return {
-            allowed: false,
-            retryAfter: Math.max(1, Math.ceil((reset - now) / 1000)),
-          };
-        }
-        current.dayCredits = (current.dayCredits ?? 0) + 2;
-        current.minuteCredits = (current.minuteCredits ?? 0) + 2;
-        current.credentialHash = credentialHash;
-        current.lastAttemptAt = new Date(now).toISOString();
-        current.nextAttemptAt = new Date(now + forexPollMs()).toISOString();
-        return { allowed: true, retryAfter: 0 };
-      },
-    );
-    if (!reservation.allowed)
-      throw new ServiceError(
-        "Configured Forex provider budget exhausted. Retaining recorded quotes.",
-        429,
-        reservation.retryAfter,
-      );
-    try {
-      const symbols = [
-        process.env.FOREX_ILS_SYMBOL || "USD/ILS",
-        process.env.FOREX_JOD_SYMBOL || "USD/JOD",
-      ];
-      if (
-        !["USD/ILS", "ILS/USD"].includes(symbols[0]) ||
-        !["USD/JOD", "JOD/USD"].includes(symbols[1])
-      )
+  pending = withLease(
+    "twelve-provider",
+    1,
+    async () => {
+      if (!process.env.TWELVE_DATA_API_KEY)
         throw new ServiceError(
-          "Configure supported USD/ILS and USD/JOD Forex legs or their inverses.",
+          "Configure the server-side TWELVE_DATA_API_KEY to receive Forex market data.",
         );
-      const raw = await Promise.all(symbols.map(providerQuote));
-      const snapshot = parseForexQuotes(raw, symbols);
-      const prior = await readForexSnapshots(),
-        last = prior.at(-1);
+      const credentialHash = createHash("sha256")
+        .update(process.env.TWELVE_DATA_API_KEY)
+        .digest("hex");
+      const status = await read<InternalStatus>(STATUS);
       if (
-        !last ||
-        Date.parse(snapshot.publishedAt!) >= Date.parse(last.publishedAt!)
+        status?.credentialHash === credentialHash &&
+        status.nextAttemptAt &&
+        Date.parse(status.nextAttemptAt) > Date.now()
       )
-        await persistForex(snapshot);
-      await update<InternalStatus, void>(
+        return readForexSnapshots();
+      const now = Date.now(),
+        day = new Date(now).toISOString().slice(0, 10),
+        minute = Math.floor(now / 60000);
+      const reservation = await update<
+        InternalStatus,
+        { allowed: boolean; retryAfter: number }
+      >(
         STATUS,
         () => ({}),
         (current) => {
-          current.lastSuccessAt = new Date().toISOString();
-          current.connection = "connected";
-          current.error = undefined;
-          current.failures = 0;
+          if (current.day !== day) {
+            current.day = day;
+            current.dayCredits = 0;
+          }
+          if (current.minute !== minute) {
+            current.minute = minute;
+            current.minuteCredits = 0;
+          }
+          const daily =
+            (current.dayCredits ?? 0) + 2 >
+            setting("TWELVE_DATA_DAILY_CREDITS", 800);
+          const minuteLimited =
+            (current.minuteCredits ?? 0) + 2 >
+            setting("TWELVE_DATA_MINUTE_CREDITS", 8);
+          if (daily || minuteLimited) {
+            const reset = daily
+              ? Date.parse(day) + 86400000
+              : (minute + 1) * 60000;
+            current.nextAttemptAt = new Date(reset).toISOString();
+            current.connection = "unavailable";
+            current.error =
+              "Configured Forex provider budget exhausted. Retaining recorded quotes.";
+            return {
+              allowed: false,
+              retryAfter: Math.max(1, Math.ceil((reset - now) / 1000)),
+            };
+          }
+          current.dayCredits = (current.dayCredits ?? 0) + 2;
+          current.minuteCredits = (current.minuteCredits ?? 0) + 2;
+          current.credentialHash = credentialHash;
+          current.lastAttemptAt = new Date(now).toISOString();
+          current.nextAttemptAt = new Date(now + forexPollMs()).toISOString();
+          return { allowed: true, retryAfter: 0 };
         },
       );
-      return readForexSnapshots();
-    } catch (error) {
-      await update<InternalStatus, void>(
-        STATUS,
-        () => ({}),
-        (current) => {
-          current.failures = (current.failures ?? 0) + 1;
-          current.connection = "unavailable";
-          current.error =
-            error instanceof ServiceError
-              ? error.message
-              : "Forex provider or storage is temporarily unavailable. Last observations are retained.";
-          const cooldown =
-            error instanceof ServiceError ? error.retryAfter * 1000 : 0;
-          current.nextAttemptAt = new Date(
-            Date.now() +
-              Math.max(
-                cooldown,
-                Math.min(
-                  3600000,
-                  forexPollMs() * 2 ** Math.min(current.failures - 1, 4),
-                ),
-              ),
-          ).toISOString();
-        },
-      );
-      throw error instanceof ServiceError
-        ? error
-        : new ServiceError(
-            "Forex provider or storage is temporarily unavailable. Last observations are retained.",
+      if (!reservation.allowed)
+        throw new ServiceError(
+          "Configured Forex provider budget exhausted. Retaining recorded quotes.",
+          429,
+          reservation.retryAfter,
+        );
+      try {
+        const symbols = [
+          process.env.FOREX_ILS_SYMBOL || "USD/ILS",
+          process.env.FOREX_JOD_SYMBOL || "USD/JOD",
+        ];
+        if (
+          !["USD/ILS", "ILS/USD"].includes(symbols[0]) ||
+          !["USD/JOD", "JOD/USD"].includes(symbols[1])
+        )
+          throw new ServiceError(
+            "Configure supported USD/ILS and USD/JOD Forex legs or their inverses.",
           );
-    }
-  })
+        const raw = await Promise.all(symbols.map(providerQuote));
+        const snapshot = parseForexQuotes(raw, symbols);
+        const prior = await readForexSnapshots(),
+          last = prior.at(-1);
+        if (
+          !last ||
+          Date.parse(snapshot.publishedAt!) >= Date.parse(last.publishedAt!)
+        )
+          await persistForex(snapshot);
+        await update<InternalStatus, void>(
+          STATUS,
+          () => ({}),
+          (current) => {
+            current.lastSuccessAt = new Date().toISOString();
+            current.connection = "connected";
+            current.error = undefined;
+            current.failures = 0;
+          },
+        );
+        return readForexSnapshots();
+      } catch (error) {
+        await update<InternalStatus, void>(
+          STATUS,
+          () => ({}),
+          (current) => {
+            current.failures = (current.failures ?? 0) + 1;
+            current.connection = "unavailable";
+            current.error =
+              error instanceof ServiceError
+                ? error.message
+                : "Forex provider or storage is temporarily unavailable. Last observations are retained.";
+            const cooldown =
+              error instanceof ServiceError ? error.retryAfter * 1000 : 0;
+            current.nextAttemptAt = new Date(
+              Date.now() +
+                Math.max(
+                  cooldown,
+                  Math.min(
+                    3600000,
+                    forexPollMs() * 2 ** Math.min(current.failures - 1, 4),
+                  ),
+                ),
+            ).toISOString();
+          },
+        );
+        throw error instanceof ServiceError
+          ? error
+          : new ServiceError(
+              "Forex provider or storage is temporarily unavailable. Last observations are retained.",
+            );
+      }
+    },
+    120000,
+  )
     .catch(async (error) => {
       if (error instanceof ServiceError && error.status === 429) {
         const prior = await readForexSnapshots();

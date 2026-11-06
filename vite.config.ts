@@ -4,7 +4,20 @@ import tailwind from "@tailwindcss/vite";
 
 export default defineConfig({
   optimizeDeps: {
-    include: ["zod"],
+    // Prebundle the complete browser graph before fixture/deep-link navigation;
+    // late React discovery can reload a page with two module identities.
+    include: [
+      "zod",
+      "react",
+      "react-dom",
+      "react-dom/client",
+      "react/jsx-runtime",
+      "react/jsx-dev-runtime",
+      "@auth0/auth0-react",
+      "@supabase/supabase-js",
+      "lucide-react",
+      "@js-temporal/polyfill",
+    ],
   },
 
   plugins: [react(), tailwind()],

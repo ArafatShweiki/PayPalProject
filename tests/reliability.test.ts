@@ -1,5 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
+import type { Request, Response } from "express";
+import { backendStorage, BackendLeaseBusy } from "../server/backend-storage";
 import {
   consumeCounter,
   consumeLimit,
@@ -7,10 +9,46 @@ import {
   remember,
   trustedIp,
   withLease,
+  limitMiddleware,
+  ServiceError,
 } from "../server/reliability";
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.useRealTimers();
   vi.unstubAllEnvs();
+});
+it("preserves the provider ServiceError contract for SQL lease contention", async () => {
+  vi.stubEnv("STORAGE", "supabase");
+  vi.spyOn(backendStorage, "withLease").mockRejectedValue(
+    new BackendLeaseBusy(),
+  );
+  await expect(
+    withLease("provider", 1, async () => null),
+  ).rejects.toBeInstanceOf(ServiceError);
+  await expect(
+    withLease("provider", 1, async () => null),
+  ).rejects.toMatchObject({ status: 429, retryAfter: 3 });
+});
+it("fails closed before sensitive work when the PostgreSQL limiter is unavailable", async () => {
+  vi.stubEnv("STORAGE", "supabase");
+  vi.spyOn(backendStorage, "consume").mockRejectedValue(
+    new Error("private SQL failure"),
+  );
+  const next = vi.fn();
+  const req = {
+    get: () => undefined,
+    socket: { remoteAddress: "127.0.0.1" },
+  } as unknown as Request;
+  const res = { locals: { uid: "alice" } } as unknown as Response;
+  await limitMiddleware(
+    "financial",
+    "RATE_LIMIT_FINANCIAL",
+    30,
+    true,
+  )(req, res, next);
+  expect(next).toHaveBeenCalledTimes(1);
+  expect(next.mock.calls[0][0]).toMatchObject({ status: 503 });
+  expect(next.mock.calls[0][0].message).not.toContain("private SQL");
 });
 it("uses stable fingerprint keys and enforces the window boundary", () => {
   expect(fingerprint({ user: "a", period: "weekly" })).toBe(

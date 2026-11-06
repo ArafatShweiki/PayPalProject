@@ -74,7 +74,7 @@ WebSocket access was investigated, but **streaming is not implemented**: no key/
 
 ## History and persistence
 
-With Supabase enabled, snapshots are persisted in `public.forex_snapshots`; without it, local SQLite provides the development equivalent. No market-data key is in a row. The status/lease store still uses the existing SQLite/Firestore deployment configuration; Supabase alone does not remove the hosted Firestore requirement.
+With Supabase enabled, snapshots are persisted in `public.forex_snapshots`; without it, local SQLite provides the development equivalent. No market-data key is in a row. Status, quota and fenced lease coordination now use Supabase-only backend storage. PMA and Twelve Data observations share the existing forex_snapshots table with explicit provider isolation. Apply 202611060001_backend_storage.sql.
 
 The wallet/feed carries a bounded recent buffer. A separate authenticated history endpoint supports **1h, 24h, 7d, 30d, 90d** using actual stored observations. The SQL function selects the last real observation in each time bucket (at most 500 points), preserving its original timestamp. It does not average or manufacture candles. Chart x positions use actual times, show coverage limits and show an unavailable state for fewer than two observations. No external time-series backfill is requested, so a new installation cannot display a full prior 90 days.
 

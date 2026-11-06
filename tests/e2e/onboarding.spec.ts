@@ -15,8 +15,7 @@ test("onboarding layout, validation and saved dashboard transition", async ({
       RefreshRuntime.injectIntoGlobalHook(window);
       window.$RefreshReg$ = () => {}; window.$RefreshSig$ = () => type => type;
       window.__vite_plugin_react_preamble_installed__ = true;
-      const { default: React } = await import('/node_modules/.vite/deps/react.js');
-      const { default: { createRoot } } = await import('/node_modules/.vite/deps/react-dom_client.js');
+      const { React, createRoot } = await import('/tests/fixtures/browser.tsx');
       const { setAuth0TokenProvider }=await import('/src/api.ts');setAuth0TokenProvider(async()=>"test-fixture-token");
       const { OnboardingBoundary } = await import('/src/Onboarding.tsx');
       await import('/src/styles.css');
@@ -24,7 +23,7 @@ test("onboarding layout, validation and saved dashboard transition", async ({
     </script></body></html>`,
     });
   });
-  let profile:import("../../shared/types").OnboardingStatus = {
+  let profile: import("../../shared/types").OnboardingStatus = {
     complete: false,
     fullName: "Taylor Example",
     email: "taylor@example.com",
