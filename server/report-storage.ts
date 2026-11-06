@@ -1,6 +1,6 @@
-import type { Report, Recommendation } from "../shared/types";
-import { getServerSupabase } from "./supabase";
-import { databaseError } from "./database-errors";
+import type { Report, Recommendation } from "../shared/types.js";
+import { getServerSupabase } from "./supabase.js";
+import { databaseError } from "./database-errors.js";
 
 export type SavedReport = { report: Report; recommendations: Recommendation[] };
 export async function findSavedReport(

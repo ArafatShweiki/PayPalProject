@@ -1,9 +1,9 @@
 ﻿import { z } from "zod";
 import { createHash } from "node:crypto";
-import { ServiceError, setting, withLease } from "./reliability";
-import { read, update } from "./store";
-import { persistForex, readForexSnapshots } from "./forex-store";
-import type { MarketStatus, Snapshot } from "../shared/types";
+import { ServiceError, setting, withLease } from "./reliability.js";
+import { read, update } from "./store.js";
+import { persistForex, readForexSnapshots } from "./forex-store.js";
+import type { MarketStatus, Snapshot } from "../shared/types.js";
 export const forexEnabled = () => process.env.MARKET_DATA_PROVIDER === "twelve";
 export const forexPollMs = () =>
   Math.max(60000, setting("FOREX_POLL_MS", 300000));

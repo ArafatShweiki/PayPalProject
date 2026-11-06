@@ -1,6 +1,6 @@
 const randomUUID = () => globalThis.crypto.randomUUID();
-import { currencies, roundUp, type Currency } from "./money";
-import type { Balances, Entry, UserData } from "./types";
+import { currencies, roundUp, type Currency } from "./money.js";
+import type { Balances, Entry, UserData } from "./types.js";
 export const emptyBalances = (): Balances => ({ ILS: 0, USD: 0, JOD: 0 });
 export function balances(
   data: UserData,

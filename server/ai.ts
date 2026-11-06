@@ -60,7 +60,7 @@ import {
   setting,
   ServiceError,
   withLease,
-} from "./reliability";
+} from "./reliability.js";
 export async function cachedExplanation(
   facts: unknown,
   instruction: string,

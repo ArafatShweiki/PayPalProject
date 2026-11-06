@@ -1,5 +1,5 @@
-import type { SavingsDestination, SavingsQuote } from "./circles";
-import type { Currency } from "./money";
+import type { SavingsDestination, SavingsQuote } from "./circles.js";
+import type { Currency } from "./money.js";
 export type Balances = Record<Currency, number>;
 export type Entry = {
   id: string;

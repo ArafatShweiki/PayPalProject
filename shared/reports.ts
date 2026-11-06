@@ -1,7 +1,7 @@
-import { reportPeriod } from "./report-period";
-import { currencies, roundUp, money } from "./money";
-import type { UserData, Report, Recommendation } from "./types";
-import { balances, emptyBalances, generalSavings, goalSaved } from "./ledger";
+import { reportPeriod } from "./report-period.js";
+import { currencies, roundUp, money } from "./money.js";
+import type { UserData, Report, Recommendation } from "./types.js";
+import { balances, emptyBalances, generalSavings, goalSaved } from "./ledger.js";
 function add(a: number, b: number): number {
   const result = a + b;
   if (

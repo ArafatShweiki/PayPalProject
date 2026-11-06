@@ -1,4 +1,4 @@
-import "./env";
+import "./env.js";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { createHash } from "node:crypto";
 

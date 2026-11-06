@@ -1,12 +1,12 @@
 ﻿import { createHash, randomUUID } from "node:crypto";
 import type { RequestHandler } from "express";
 import { isIP } from "node:net";
-import { update } from "./store";
+import { update } from "./store.js";
 import {
   backendStorage,
   BackendLeaseBusy,
   sqlStorage,
-} from "./backend-storage";
+} from "./backend-storage.js";
 export class ServiceError extends Error {
   constructor(
     message: string,

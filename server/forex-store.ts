@@ -1,13 +1,13 @@
-﻿import { getServerSupabase, supabaseEnabled } from "./supabase";
-import { read, update } from "./store";
-import { databaseError } from "./database-errors";
-import { backendStorage, sqlStorage } from "./backend-storage";
-import type { Snapshot } from "../shared/types";
+﻿import { getServerSupabase, supabaseEnabled } from "./supabase.js";
+import { read, update } from "./store.js";
+import { databaseError } from "./database-errors.js";
+import { backendStorage, sqlStorage } from "./backend-storage.js";
+import type { Snapshot } from "../shared/types.js";
 import {
   historyPeriods,
   observationTime,
   type HistoryPeriod,
-} from "../shared/market";
+} from "../shared/market.js";
 export async function persistForex(snapshot: Snapshot) {
   if (sqlStorage()) {
     await backendStorage.observation("twelve", snapshot);

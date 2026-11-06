@@ -2,50 +2,50 @@ import {
   circlesRouter,
   invitationPublicRouter,
   savingsRpc,
-} from "./savings-circles";
-import { databaseError } from "./database-errors";
-import { diagnostics, timed } from "./diagnostics";
-import { bootstrap } from "./bootstrap";
-import { progressiveRouter } from "./progressive";
-import { fundingRouter, fundingEnabled } from "./funding";
-import { forexEnabled, forexStatus } from "./forex";
-import { forexHistory } from "./forex-store";
+} from "./savings-circles.js";
+import { databaseError } from "./database-errors.js";
+import { diagnostics, timed } from "./diagnostics.js";
+import { bootstrap } from "./bootstrap.js";
+import { progressiveRouter } from "./progressive.js";
+import { fundingRouter, fundingEnabled } from "./funding.js";
+import { forexEnabled, forexStatus } from "./forex.js";
+import { forexHistory } from "./forex-store.js";
 import {
   historyPeriods,
   snapshotRate,
   pairTime,
   isQuoteStale,
   rateMethod,
-} from "../shared/market";
-import { DatabaseError } from "./database-errors";
-import { databaseState } from "./database-state";
-import "./env";
-import { backendStorage, sqlStorage } from "./backend-storage";
+} from "../shared/market.js";
+import { DatabaseError } from "./database-errors.js";
+import { databaseState } from "./database-state.js";
+import "./env.js";
+import { backendStorage, sqlStorage } from "./backend-storage.js";
 import {
   applicationOrigin,
   validateDeploymentConfiguration,
-} from "./configuration";
+} from "./configuration.js";
 import express from "express";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
-import { ServiceError, limitMiddleware } from "./reliability";
+import { ServiceError, limitMiddleware } from "./reliability.js";
 import { randomUUID } from "node:crypto";
 
 import { z } from "zod";
-import { currencies, minor, convert } from "../shared/money";
-import type { Entry, Preferences, UserData } from "../shared/types";
-import { append, balances, idempotent } from "./ledger";
-import { userRead, userUpdate, snapshots, registerUserIdentity } from "./store";
-import { refreshRates, stale, rateStaleMs } from "./rates";
+import { currencies, minor, convert } from "../shared/money.js";
+import type { Entry, Preferences, UserData } from "../shared/types.js";
+import { append, balances, idempotent } from "./ledger.js";
+import { userRead, userUpdate, snapshots, registerUserIdentity } from "./store.js";
+import { refreshRates, stale, rateStaleMs } from "./rates.js";
 
-import { currencyInsight } from "./currency-insights";
+import { currencyInsight } from "./currency-insights.js";
 import {
   auth0Enabled,
   auth0Config,
   verifyWalletIdentity,
   auth0UserInfo,
-} from "./auth0";
-import { onboardingRouter } from "./onboarding";
+} from "./auth0.js";
+import { onboardingRouter } from "./onboarding.js";
 import {
   getServerSupabase,
   acceptSavingsRule,
@@ -55,7 +55,7 @@ import {
   readProfile,
   applyLedgerTransaction,
   updateProfilePreferences,
-} from "./supabase";
+} from "./supabase.js";
 
 validateDeploymentConfiguration(process.env);
 export const app = express();
@@ -820,14 +820,14 @@ app.post("/api/reports", async (req, res) => {
     .strict()
     .parse(req.body);
   try {
-    const { reportPeriod } = await import("../shared/report-period");
+    const { reportPeriod } = await import("../shared/report-period.js");
     reportPeriod(frequency, Date.now(), date, timezone);
   } catch {
     throw new ServiceError("Choose a valid reporting date and timezone.", 400);
   }
   const data = (await databaseState(res.locals.sub, res.locals.uid)).data;
   const { report: result, recommendations } = await (
-    await import("./reports")
+    await import("./reports.js")
   ).generateSavedReport(
     res.locals.sub,
     res.locals.uid,

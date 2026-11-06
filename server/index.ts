@@ -1,8 +1,8 @@
-import { forexEnabled, forexPollMs } from "./forex";
-import { diagnoseFundingConfiguration } from "./funding";
-import { setting } from "./reliability";
-import { app } from "./app";
-import { refreshRates } from "./rates";
+import { forexEnabled, forexPollMs } from "./forex.js";
+import { diagnoseFundingConfiguration } from "./funding.js";
+import { setting } from "./reliability.js";
+import { app } from "./app.js";
+import { refreshRates } from "./rates.js";
 import express from "express";
 import { resolve } from "node:path";
 diagnoseFundingConfiguration();

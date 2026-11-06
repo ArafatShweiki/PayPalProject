@@ -8,12 +8,14 @@ export default ts.config(
       "node_modules/**",
       "playwright-report/**",
       "test-results/**",
+      ".temp/**",
+      ".vercel/**",
     ],
   },
   js.configs.recommended,
   ...ts.configs.recommended,
   {
-    files: ["**/*.{ts,tsx,js}"],
+    files: ["**/*.{ts,tsx,js,mjs}"],
     languageOptions: { globals: { ...globals.node, ...globals.browser } },
     rules: {
       "@typescript-eslint/no-unused-vars": [

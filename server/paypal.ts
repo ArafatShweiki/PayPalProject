@@ -1,4 +1,4 @@
-import { ServiceError } from "./reliability";
+import { ServiceError } from "./reliability.js";
 export const PAYPAL_BASE = "https://api-m.sandbox.paypal.com";
 export const paypalEnabled = () =>
   !!(

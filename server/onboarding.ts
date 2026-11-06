@@ -1,10 +1,10 @@
 import { Router } from "express";
 import { z } from "zod";
-import { currencies } from "../shared/money";
-import type { OnboardingStatus, UserData } from "../shared/types";
-import { userRead, userUpdate } from "./store";
-import { auth0UserInfo } from "./auth0";
-import { supabaseEnabled, readProfile, completeProfile } from "./supabase";
+import { currencies } from "../shared/money.js";
+import type { OnboardingStatus, UserData } from "../shared/types.js";
+import { userRead, userUpdate } from "./store.js";
+import { auth0UserInfo } from "./auth0.js";
+import { supabaseEnabled, readProfile, completeProfile } from "./supabase.js";
 
 export const onboardingRouter = Router();
 const input = z

@@ -3,15 +3,15 @@ import type {
   Snapshot,
   Recommendation,
   UserData,
-} from "../shared/types";
-import { buildReport } from "../shared/reports";
+} from "../shared/types.js";
+import { buildReport } from "../shared/reports.js";
 import {
   generateReportContent,
   reportModel,
   ReportAIError,
-} from "./gemini-reports";
-import { REPORT_PROMPT_VERSION } from "./report-prompt";
-import { validateReportContent } from "./report-schema";
+} from "./gemini-reports.js";
+import { REPORT_PROMPT_VERSION } from "./report-prompt.js";
+import { validateReportContent } from "./report-schema.js";
 import {
   consumeLimit,
   remember,
@@ -19,10 +19,10 @@ import {
   ServiceError,
   withLease,
   fingerprint,
-} from "./reliability";
-import { findSavedReport, saveReport } from "./report-storage";
-export { buildReport } from "../shared/reports";
-export { aiSchema } from "./ai";
+} from "./reliability.js";
+import { findSavedReport, saveReport } from "./report-storage.js";
+export { buildReport } from "../shared/reports.js";
+export { aiSchema } from "./ai.js";
 
 export async function explain(
   report: Report,

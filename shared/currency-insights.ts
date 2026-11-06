@@ -1,6 +1,6 @@
-import { snapshotRate, pairTime, isQuoteStale } from "./market";
-import { convert, money, changePercent, type Currency } from "./money";
-import type { CurrencyInsight, Snapshot } from "./types";
+import { snapshotRate, pairTime, isQuoteStale } from "./market.js";
+import { convert, money, changePercent, type Currency } from "./money.js";
+import type { CurrencyInsight, Snapshot } from "./types.js";
 export const comparisonPeriods = {
   "24h": 86400000,
   "7d": 7 * 86400000,

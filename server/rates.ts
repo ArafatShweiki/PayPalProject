@@ -1,12 +1,12 @@
-import { forexEnabled, forexStaleMs, refreshForex } from "./forex";
-import { observationTime, snapshotRate } from "../shared/market";
-import { setting, withLease } from "./reliability";
-import { readProfile, supabaseEnabled } from "./supabase";
+import { forexEnabled, forexStaleMs, refreshForex } from "./forex.js";
+import { observationTime, snapshotRate } from "../shared/market.js";
+import { setting, withLease } from "./reliability.js";
+import { readProfile, supabaseEnabled } from "./supabase.js";
 import { createHash, randomUUID } from "node:crypto";
-import { changePercent, rateUnits, convert, money } from "../shared/money";
-import type { Snapshot, UserData } from "../shared/types";
-import { read, snapshots, update, userUpdate, users } from "./store";
-import { persistPma } from "./forex-store";
+import { changePercent, rateUnits, convert, money } from "../shared/money.js";
+import type { Snapshot, UserData } from "../shared/types.js";
+import { read, snapshots, update, userUpdate, users } from "./store.js";
+import { persistPma } from "./forex-store.js";
 export const PMA_URL = "https://wcur.pma.ps/webtools/currency/embed";
 export const rateStaleMs = () =>
   forexEnabled()

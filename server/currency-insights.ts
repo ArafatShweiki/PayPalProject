@@ -1,10 +1,10 @@
-import { rateStaleMs } from "./rates";
-import { money, type Currency } from "../shared/money";
-import type { CurrencyInsight, Snapshot } from "../shared/types";
-import { explainFacts, cachedExplanation } from "./ai";
-import { currencyFacts } from "../shared/currency-insights";
-import type { ComparisonPeriod } from "../shared/currency-insights";
-export { currencyFacts } from "../shared/currency-insights";
+import { rateStaleMs } from "./rates.js";
+import { money, type Currency } from "../shared/money.js";
+import type { CurrencyInsight, Snapshot } from "../shared/types.js";
+import { explainFacts, cachedExplanation } from "./ai.js";
+import { currencyFacts } from "../shared/currency-insights.js";
+import type { ComparisonPeriod } from "../shared/currency-insights.js";
+export { currencyFacts } from "../shared/currency-insights.js";
 export async function currencyInsight(
   snapshots: Snapshot[],
   from: Currency,

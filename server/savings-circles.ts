@@ -1,20 +1,20 @@
 import { Router } from "express";
-import { applicationOrigin } from "./configuration";
+import { applicationOrigin } from "./configuration.js";
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
-import { currencies, minor, roundUp, convert } from "../shared/money";
-import { isQuoteStale, snapshotRate, pairTime } from "../shared/market";
-import type { SavingsOptions } from "../shared/circles";
-import type { CircleDetail } from "../shared/circles";
+import { currencies, minor, roundUp, convert } from "../shared/money.js";
+import { isQuoteStale, snapshotRate, pairTime } from "../shared/market.js";
+import type { SavingsOptions } from "../shared/circles.js";
+import type { CircleDetail } from "../shared/circles.js";
 import {
   getServerSupabase,
   readProfile,
   readSavingsRules,
   readIdempotentTransaction,
-} from "./supabase";
-import { snapshots } from "./store";
-import { refreshRates, rateStaleMs } from "./rates";
-import { databaseError, DatabaseError } from "./database-errors";
+} from "./supabase.js";
+import { snapshots } from "./store.js";
+import { refreshRates, rateStaleMs } from "./rates.js";
+import { databaseError, DatabaseError } from "./database-errors.js";
 const currency = z.enum(currencies),
   key = z.uuid(),
   amount = z.string().max(20),

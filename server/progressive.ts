@@ -1,11 +1,11 @@
 import { Router } from "express";
 import { z } from "zod";
-import { getServerSupabase, type StoredTransaction } from "./supabase";
-import { mapTransaction } from "./database-state";
-import { userRead } from "./store";
-import { databaseError } from "./database-errors";
-import type { ActivityPage, FundingOrder, State, Entry } from "../shared/types";
-import { timed } from "./diagnostics";
+import { getServerSupabase, type StoredTransaction } from "./supabase.js";
+import { mapTransaction } from "./database-state.js";
+import { userRead } from "./store.js";
+import { databaseError } from "./database-errors.js";
+import type { ActivityPage, FundingOrder, State, Entry } from "../shared/types.js";
+import { timed } from "./diagnostics.js";
 const router = Router();
 router.get("/dashboard", async (req, res) => {
   const timezone = z.string().max(80).default("UTC").parse(req.query.timezone);

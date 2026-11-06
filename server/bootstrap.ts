@@ -1,16 +1,16 @@
-import type { Bootstrap, OnboardingStatus, State } from "../shared/types";
-import { currencies } from "../shared/money";
-import { initialUser } from "../shared/ledger";
+import type { Bootstrap, OnboardingStatus, State } from "../shared/types.js";
+import { currencies } from "../shared/money.js";
+import { initialUser } from "../shared/ledger.js";
 import {
   initializeProfile,
   readWallets,
   readSavingsRules,
   type Profile,
-} from "./supabase";
-import { timed } from "./diagnostics";
-import { ServiceError } from "./reliability";
-import { fundingEnabled } from "./funding";
-import { rateStaleMs } from "./rates";
+} from "./supabase.js";
+import { timed } from "./diagnostics.js";
+import { ServiceError } from "./reliability.js";
+import { fundingEnabled } from "./funding.js";
+import { rateStaleMs } from "./rates.js";
 export function onboardingStatus(profile: Profile): OnboardingStatus {
   return {
     complete: !!profile.onboarding_completed_at,

@@ -1,6 +1,6 @@
-import type { UserData, Entry } from "../shared/types";
-import { currencies } from "../shared/money";
-import { userRead } from "./store";
+import type { UserData, Entry } from "../shared/types.js";
+import { currencies } from "../shared/money.js";
+import { userRead } from "./store.js";
 import {
   readProfile,
   readWallets,
@@ -9,7 +9,7 @@ import {
   getServerSupabase,
   type StoredTransaction,
   type Profile,
-} from "./supabase";
+} from "./supabase.js";
 
 export async function databaseState(
   sub: string,

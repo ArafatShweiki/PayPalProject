@@ -1,8 +1,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
-import { DatabaseError } from "./database-errors";
-import { getServerSupabase } from "./supabase";
-import type { Snapshot, UserData } from "../shared/types";
+import { DatabaseError } from "./database-errors.js";
+import { getServerSupabase } from "./supabase.js";
+import type { Snapshot, UserData } from "../shared/types.js";
 
 export type LeaseGuard = { scope: string; owner: string; generation: number };
 export type Lease = LeaseGuard & { acquired: true; expiresAt: string };

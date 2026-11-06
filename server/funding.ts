@@ -1,13 +1,13 @@
 import { Router } from "express";
-import { applicationOrigin } from "./configuration";
+import { applicationOrigin } from "./configuration.js";
 import { z } from "zod";
 import { createHash } from "node:crypto";
-import { paypal, paypalEnabled } from "./paypal";
-import { getServerSupabase } from "./supabase";
-import { databaseError } from "./database-errors";
-import { limitMiddleware, ServiceError } from "./reliability";
-import { minor, decimal } from "../shared/money";
-import type { FundingOrder } from "../shared/types";
+import { paypal, paypalEnabled } from "./paypal.js";
+import { getServerSupabase } from "./supabase.js";
+import { databaseError } from "./database-errors.js";
+import { limitMiddleware, ServiceError } from "./reliability.js";
+import { minor, decimal } from "../shared/money.js";
+import type { FundingOrder } from "../shared/types.js";
 
 export const fundingCurrencies = () =>
   [

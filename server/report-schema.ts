@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Recommendation, Report } from "../shared/types";
+import type { Recommendation, Report } from "../shared/types.js";
 
 const prose = z.string().trim().min(1).max(350);
 export const reportContentSchema = z

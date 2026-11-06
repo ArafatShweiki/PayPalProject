@@ -1,8 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
 import { z } from "zod";
-import { reportContentSchema } from "./report-schema";
-import { REPORT_SYSTEM_PROMPT } from "./report-prompt";
-import { setting, consumeLimit } from "./reliability";
+import { reportContentSchema } from "./report-schema.js";
+import { REPORT_SYSTEM_PROMPT } from "./report-prompt.js";
+import { setting, consumeLimit } from "./reliability.js";
 
 export const reportModel = () =>
   process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";

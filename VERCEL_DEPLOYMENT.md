@@ -12,6 +12,8 @@ The local environment remains a local configuration: `check:deployment` correctl
 
 ## Architecture and deployment settings
 
+Backend ESM imports use explicit `.js` extensions, including imports written in TypeScript. Vercel emits individual JavaScript modules for the API; Vite only bundles the frontend. `npm run build` now checks both the frontend's Bundler configuration and `tsconfig.server.json` with NodeNext resolution. Run `npm run check:node-function` to compile and load the backend under plain Node without tsx or loader hooks. See [VERCEL_ESM_FIX.md](VERCEL_ESM_FIX.md) for the reproduced failure and official-builder verification.
+
 | Setting | Exact value |
 | --- | --- |
 | Framework preset | Vite |

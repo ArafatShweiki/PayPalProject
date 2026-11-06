@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently -k \"tsx watch server/index.ts\" \"vite --host 127.0.0.1\"",
-    "build": "tsc --noEmit && vite build",
+    "build": "npm run typecheck && vite build",
     "start": "tsx server/index.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json",
     "lint": "eslint .",
     "test": "vitest run",
     "test:e2e": "playwright test",
@@ -24,7 +24,8 @@
     "test:production": "playwright test --config playwright.production.config.ts",
     "test:postgres": "tsx scripts/test-backend-postgres.ts",
     "export:legacy": "tsx scripts/export-legacy-storage.ts",
-    "import:legacy": "tsx scripts/import-legacy-storage.ts"
+    "import:legacy": "tsx scripts/import-legacy-storage.ts",
+    "check:node-function": "node scripts/check-node-function.mjs"
   },
   "dependencies": {
     "@auth0/auth0-react": "^2.28.2",

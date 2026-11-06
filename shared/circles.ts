@@ -1,4 +1,4 @@
-import type { Currency } from "./money";
+import type { Currency } from "./money.js";
 export type CircleInvitation = {
   name: string;
   description: string;

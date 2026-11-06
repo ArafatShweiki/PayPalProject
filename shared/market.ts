@@ -1,6 +1,6 @@
-﻿import type { Currency } from "./money";
-import { crossRate } from "./money";
-import type { Snapshot } from "./types";
+﻿import type { Currency } from "./money.js";
+import { crossRate } from "./money.js";
+import type { Snapshot } from "./types.js";
 export const observationTime = (s: Snapshot) => s.publishedAt ?? s.fetchedAt;
 export function snapshotRate(s: Snapshot, from: Currency, to: Currency) {
   if (from === to) return 1000000;

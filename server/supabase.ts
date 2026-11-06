@@ -1,8 +1,8 @@
-import { validateSupabaseConfiguration } from "./configuration";
-import { databaseError } from "./database-errors";
-import { requestSignal, timed } from "./diagnostics";
-import type { Preferences, Recommendation } from "../shared/types";
-import "./env";
+import { validateSupabaseConfiguration } from "./configuration.js";
+import { databaseError } from "./database-errors.js";
+import { requestSignal, timed } from "./diagnostics.js";
+import type { Preferences, Recommendation } from "../shared/types.js";
+import "./env.js";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 const enabled = process.env.SUPABASE_ENABLED === "true";

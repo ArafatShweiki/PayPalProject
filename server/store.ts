@@ -1,5 +1,5 @@
-import { getServerSupabase, supabaseEnabled, readProfile } from "./supabase";
-import "./env";
+import { getServerSupabase, supabaseEnabled, readProfile } from "./supabase.js";
+import "./env.js";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import {
@@ -7,9 +7,9 @@ import {
   currentGuards,
   sqlStorage,
   storageMode,
-} from "./backend-storage";
-import type { UserData, Snapshot } from "../shared/types";
-import { initialUser } from "./ledger";
+} from "./backend-storage.js";
+import type { UserData, Snapshot } from "../shared/types.js";
+import { initialUser } from "./ledger.js";
 if (!["supabase", "sqlite"].includes(storageMode()))
   throw new Error(
     "Unsupported STORAGE adapter. Apply the backend storage migration and use STORAGE=supabase; SQLite is local/test only.",
@@ -163,8 +163,8 @@ export async function userRead(
 }
 export const snapshots = async (): Promise<Snapshot[]> =>
   process.env.MARKET_DATA_PROVIDER === "twelve"
-    ? (await import("./forex-store")).readForexSnapshots()
-    : (await import("./forex-store")).readPmaSnapshots();
+    ? (await import("./forex-store.js")).readForexSnapshots()
+    : (await import("./forex-store.js")).readPmaSnapshots();
 export async function users(): Promise<string[]> {
   if (!supabaseEnabled()) return [];
   const result: string[] = [];
