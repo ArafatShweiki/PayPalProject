@@ -20,6 +20,25 @@ export class ReportAIError extends Error {
   }
 }
 
+// Keep the application deadline authoritative even if an SDK transport delays
+// propagating cancellation. The same signal still aborts the underlying request.
+async function beforeDeadline<T>(
+  work: Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  let abort!: () => void;
+  const expired = new Promise<never>((_resolve, reject) => {
+    abort = () => reject(new ReportAIError("timeout"));
+    if (signal.aborted) abort();
+    else signal.addEventListener("abort", abort, { once: true });
+  });
+  try {
+    return await Promise.race([work, expired]);
+  } finally {
+    signal.removeEventListener("abort", abort);
+  }
+}
+
 export async function generateReportContent(facts: unknown): Promise<unknown> {
   if (!process.env.GEMINI_API_KEY) throw new ReportAIError("configuration");
   const input = JSON.stringify(facts);
@@ -31,25 +50,32 @@ export async function generateReportContent(facts: unknown): Promise<unknown> {
   );
   for (let attempt = 0; attempt < 2; attempt++) {
     if (attempt > 0) {
-      const quota = await consumeLimit("gemini-provider", "shared", setting("GEMINI_REQUESTS_PER_MINUTE", 30));
+      const quota = await consumeLimit(
+        "gemini-provider",
+        "shared",
+        setting("GEMINI_REQUESTS_PER_MINUTE", 30),
+      );
       if (!quota.allowed) throw new ReportAIError("quota");
     }
     try {
-      const result = await client.interactions.create(
-        {
-          model: reportModel(),
-          input,
-          store: false,
-          automatic_continuation: false,
-          system_instruction: REPORT_SYSTEM_PROMPT,
-          response_format: {
-            type: "text",
-            mime_type: "application/json",
-            schema: z.toJSONSchema(reportContentSchema),
+      const result = await beforeDeadline(
+        client.interactions.create(
+          {
+            model: reportModel(),
+            input,
+            store: false,
+            automatic_continuation: false,
+            system_instruction: REPORT_SYSTEM_PROMPT,
+            response_format: {
+              type: "text",
+              mime_type: "application/json",
+              schema: z.toJSONSchema(reportContentSchema),
+            },
+            generation_config: { max_output_tokens: 1800, temperature: 0.2 },
           },
-          generation_config: { max_output_tokens: 1800, temperature: 0.2 },
-        },
-        { signal, maxRetries: 0 },
+          { signal, maxRetries: 0 },
+        ),
+        signal,
       );
       if (
         result.status !== "completed" ||

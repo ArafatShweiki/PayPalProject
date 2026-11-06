@@ -9,6 +9,7 @@ const secretNames = [
   "GEMINI_API_KEY",
   "FIREBASE_SERVICE_ACCOUNT",
   "CRON_SECRET",
+  "TWELVE_DATA_API_KEY",
 ];
 const secrets = secretNames.flatMap((name) =>
   process.env[name] && process.env[name]!.length >= 8
@@ -61,6 +62,16 @@ function collect(dir: string) {
 collect("dist");
 collect("src");
 publicFiles.push(".env.example");
+// Include current tracked backend/config files, not only historical revisions.
+publicFiles.push(
+  ...execFileSync(
+    "git",
+    ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+    { encoding: "utf8" },
+  )
+    .split("\0")
+    .filter((path) => path && existsSync(path)),
+);
 for (const path of publicFiles)
   if (suspected(readFileSync(path, "utf8"))) findings.push(path);
 const ignored = execFileSync(

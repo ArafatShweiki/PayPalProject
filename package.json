@@ -16,7 +16,12 @@
     "check:forex": "tsx scripts/check-forex.ts",
     "check:startup": "vitest run tests/startup-performance.test.ts",
     "check:savings": "tsx scripts/check-savings-schema.ts",
-    "check:auth-build": "tsx scripts/check-auth-build.ts"
+    "check:auth-build": "tsx scripts/check-auth-build.ts",
+    "check:deployment": "tsx scripts/check-deployment.ts",
+    "check:secrets": "tsx scripts/audit-secrets.ts",
+    "check:database": "tsx scripts/check-database-readiness.ts",
+    "start:preview": "tsx scripts/preview-production.ts",
+    "test:production": "playwright test --config playwright.production.config.ts"
   },
   "dependencies": {
     "@auth0/auth0-react": "^2.28.2",

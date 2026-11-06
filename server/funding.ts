@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { applicationOrigin } from "./configuration";
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { paypal, paypalEnabled } from "./paypal";
@@ -312,8 +313,7 @@ fundingRouter.post("/orders", async (req, res) => {
       "This payment needs review before it can be retried.",
       409,
     );
-  const origin = new URL(process.env.APP_ORIGIN || "http://127.0.0.1:5173")
-    .origin;
+  const origin = applicationOrigin();
   try {
     const result = await paypal(
       "/v2/checkout/orders",

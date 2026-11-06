@@ -122,3 +122,15 @@ it("bounds stalled network calls with an abort timeout", async () => {
     reason: "timeout",
   });
 });
+
+it("enforces the report deadline even when the transport ignores cancellation", async () => {
+  vi.stubEnv("GEMINI_API_KEY", "test");
+  vi.stubEnv("GEMINI_REPORT_TIMEOUT_MS", "20");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => new Promise(() => {})),
+  );
+  await expect(generateReportContent({})).rejects.toMatchObject({
+    reason: "timeout",
+  });
+});

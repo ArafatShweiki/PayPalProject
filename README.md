@@ -84,3 +84,7 @@ Tests use controlled provider responses, locally signed JWTs, PostgreSQL/PGlite 
 ## Deployment boundary
 
 No cloud migration, deployment or live financial service is enabled by this change. Vercel requires the existing durable shared-cache configuration and all server environment variables; keep secrets out of Git. Review [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md) and the current [implementation report](FUNDING_IMPLEMENTATION_REPORT.md) before enabling Sandbox access. No real-money deposits, withdrawals or trading are implemented.
+
+## Vercel deployment
+
+See [VERCEL_DEPLOYMENT.md](VERCEL_DEPLOYMENT.md) for this repository's deployment settings, required credentials, database migrations, provider configuration, validation results and rollout checklist. Do not use SQLite storage on Vercel.

@@ -1,3 +1,53 @@
+export function applicationOrigin(env: NodeJS.ProcessEnv = process.env) {
+  const value =
+    env.APP_ORIGIN || (env.VERCEL_URL ? `https://${env.VERCEL_URL}` : "");
+  if (!value) {
+    if (env.VERCEL || env.NODE_ENV === "production")
+      throw new Error("APP_ORIGIN must be configured for production.");
+    return "http://127.0.0.1:5173";
+  }
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("APP_ORIGIN must be a valid origin.");
+  }
+  const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  if (
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash ||
+    url.pathname !== "/" ||
+    (url.protocol !== "https:" &&
+      !(
+        url.protocol === "http:" &&
+        local &&
+        !env.VERCEL &&
+        env.NODE_ENV !== "production"
+      )) ||
+    ((env.VERCEL || env.NODE_ENV === "production") && local)
+  )
+    throw new Error(
+      "APP_ORIGIN must be an HTTPS origin without a path, credentials, query or fragment.",
+    );
+  return url.origin;
+}
+
+export function validateDeploymentConfiguration(env: NodeJS.ProcessEnv) {
+  if (!env.VERCEL) return;
+  applicationOrigin(env);
+  if (env.AUTH0_ENABLED !== "true" || env.SUPABASE_ENABLED !== "true")
+    throw new Error(
+      "Vercel requires AUTH0_ENABLED=true and SUPABASE_ENABLED=true.",
+    );
+  validateSupabaseConfiguration(env);
+  if (env.STORAGE !== "firestore" || !env.FIREBASE_SERVICE_ACCOUNT)
+    throw new Error(
+      "Vercel requires STORAGE=firestore and private FIREBASE_SERVICE_ACCOUNT for shared request protection.",
+    );
+}
+
 export function validateSupabaseConfiguration(env: NodeJS.ProcessEnv) {
   if (env.SUPABASE_ENABLED !== "true") return;
   const publicKey = env.SUPABASE_PUBLISHABLE_KEY || env.SUPABASE_ANON_KEY;

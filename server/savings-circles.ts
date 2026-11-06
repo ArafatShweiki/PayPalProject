@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { applicationOrigin } from "./configuration";
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
 import { currencies, minor, roundUp, convert } from "../shared/money";
@@ -331,7 +332,7 @@ circlesRouter.post("/circles/:id/invite", async (req, res) => {
     p_payload: { hash: hash(raw) },
   });
   res.json({
-    url: `${process.env.APP_ORIGIN || "http://127.0.0.1:5173"}/circles/invite/${raw}`,
+    url: `${applicationOrigin()}/circles/invite/${raw}`,
     expiresInDays: 7,
   });
 });

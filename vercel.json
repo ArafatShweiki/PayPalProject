@@ -7,7 +7,7 @@
       "destination": "/api"
     },
     {
-      "source": "/((?!assets/).*)",
+      "source": "/((?!api(?:/|$)|assets(?:/|$)).*)",
       "destination": "/index.html"
     }
   ],
@@ -43,7 +43,7 @@
         },
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://*.auth0.com https://*.supabase.co https://*.googleapis.com https://*.firebaseapp.com; frame-src https://*.auth0.com https://*.firebaseapp.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+          "value": "default-src 'self'; script-src 'self' https://www.sandbox.paypal.com https://*.paypalobjects.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.paypalobjects.com https://*.sandbox.paypal.com; connect-src 'self' https://*.auth0.com https://*.supabase.co https://*.sandbox.paypal.com https://*.paypalobjects.com; frame-src https://*.auth0.com https://*.sandbox.paypal.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self' https://*.sandbox.paypal.com"
         }
       ]
     },
@@ -55,6 +55,23 @@
           "value": "private, no-store"
         }
       ]
+    },
+    {
+      "source": "/assets/:path*",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
     }
-  ]
+  ],
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "installCommand": "npm ci",
+  "functions": {
+    "api/index.ts": {
+      "maxDuration": 300
+    }
+  }
 }

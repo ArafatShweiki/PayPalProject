@@ -1,5 +1,9 @@
 import { expect, it } from "vitest";
-import { validateSupabaseConfiguration } from "../server/configuration";
+import {
+  applicationOrigin,
+  validateDeploymentConfiguration,
+  validateSupabaseConfiguration,
+} from "../server/configuration";
 import { databaseError } from "../server/database-errors";
 const valid = {
   AUTH0_ENABLED: "true",
@@ -8,6 +12,44 @@ const valid = {
   SUPABASE_PUBLISHABLE_KEY: "sb_publishable_test",
   SUPABASE_SECRET_KEY: "sb_secret_test",
 };
+it("uses the exact HTTPS deployment origin and rejects unsafe callback destinations", () => {
+  expect(applicationOrigin({})).toBe("http://127.0.0.1:5173");
+  expect(
+    applicationOrigin({ VERCEL: "1", VERCEL_URL: "preview.vercel.app" }),
+  ).toBe("https://preview.vercel.app");
+  expect(applicationOrigin({ APP_ORIGIN: "https://wallet.example/" })).toBe(
+    "https://wallet.example",
+  );
+  for (const APP_ORIGIN of [
+    "http://localhost:5173",
+    "http://wallet.example",
+    "https://wallet.example/path",
+    "https://user:password@wallet.example",
+    "https://wallet.example/?redirect=evil",
+    "invalid",
+  ])
+    expect(() => applicationOrigin({ VERCEL: "1", APP_ORIGIN })).toThrow();
+  expect(() => applicationOrigin({ NODE_ENV: "production" })).toThrow();
+});
+it("fails closed when a Vercel instance lacks authenticated durable storage", () => {
+  const env = {
+    ...valid,
+    VERCEL: "1",
+    APP_ORIGIN: "https://wallet.example",
+    STORAGE: "firestore",
+    FIREBASE_SERVICE_ACCOUNT: "configured",
+  };
+  expect(() => validateDeploymentConfiguration(env)).not.toThrow();
+  for (const patch of [
+    { STORAGE: "sqlite" },
+    { FIREBASE_SERVICE_ACCOUNT: "" },
+    { AUTH0_ENABLED: "false" },
+    { SUPABASE_ENABLED: "false" },
+  ])
+    expect(() =>
+      validateDeploymentConfiguration({ ...env, ...patch }),
+    ).toThrow();
+});
 it("rejects missing configuration and accidental exposure of service credentials", () => {
   expect(() => validateSupabaseConfiguration(valid)).not.toThrow();
   for (const env of [

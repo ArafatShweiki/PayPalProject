@@ -20,6 +20,10 @@ import {
 import { DatabaseError } from "./database-errors";
 import { databaseState } from "./database-state";
 import "./env";
+import {
+  applicationOrigin,
+  validateDeploymentConfiguration,
+} from "./configuration";
 import express from "express";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
@@ -58,6 +62,7 @@ import {
   updateProfilePreferences,
 } from "./supabase";
 
+validateDeploymentConfiguration(process.env);
 export const app = express();
 app.disable("x-powered-by");
 app.use(
@@ -140,11 +145,16 @@ app.use("/api", async (req, res, next) => {
   try {
     if (!["GET", "HEAD"].includes(req.method)) {
       const origin = req.headers.origin;
-      const allowed = process.env.APP_ORIGIN || "http://127.0.0.1:5173";
-      if (origin && origin !== allowed)
-        throw new Error("Request origin not allowed.");
-      if (req.headers["x-walletwise"] !== "1")
-        throw new Error("Missing request header.");
+      const allowed = applicationOrigin();
+      if (
+        (origin && origin !== allowed) ||
+        req.headers["x-walletwise"] !== "1"
+      ) {
+        res
+          .status(403)
+          .json({ error: "Request origin or protection header is invalid." });
+        return;
+      }
     }
     const token = req.headers.authorization?.replace(/^Bearer /, "");
     if (auth0Enabled) {

@@ -142,6 +142,10 @@ dist/
 node_modules/
 playwright-report/
 test-results/
+test-results-production/
 
 .env.*
 !.env.example
+
+# Local Vercel linkage and build output may contain downloaded environment values.
+.vercel/

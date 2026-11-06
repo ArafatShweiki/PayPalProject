@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { api, setAuth0TokenProvider } from "../src/api";
+import { api, requestTimeoutMs, setAuth0TokenProvider } from "../src/api";
 afterEach(() => {
   setAuth0TokenProvider();
   vi.unstubAllGlobals();
@@ -14,6 +14,15 @@ const json = (
     status,
     headers: { "content-type": "application/json", ...headers },
   });
+it("allows bounded provider workflows to finish without extending ordinary reads", () => {
+  expect(requestTimeoutMs("/bootstrap")).toBe(12000);
+  expect(requestTimeoutMs("/state")).toBe(20000);
+  expect(requestTimeoutMs("/purchases")).toBe(20000);
+  expect(requestTimeoutMs("/reports")).toBe(60000);
+  expect(requestTimeoutMs("/funding/orders")).toBe(180000);
+  expect(requestTimeoutMs("/funding/order-id/capture")).toBe(180000);
+  expect(requestTimeoutMs("/funding/order-id/reconcile")).toBe(180000);
+});
 it("deduplicates private reads, invalidates after mutation and isolates account changes", async () => {
   const fetcher = vi.fn().mockImplementation(async () => json({ balance: 10 }));
   vi.stubGlobal("fetch", fetcher);

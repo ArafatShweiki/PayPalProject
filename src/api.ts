@@ -18,6 +18,14 @@ const configuredTtl = Number(import.meta.env.VITE_STATE_STALE_MS ?? 1500);
 const stateTtl = Number.isFinite(configuredTtl)
   ? Math.max(0, Math.min(10000, configuredTtl))
   : 1500;
+export function requestTimeoutMs(path: string) {
+  if (path === "/bootstrap") return 12000;
+  // Capture/reconciliation can perform several sequential bounded provider calls.
+  // A longer client deadline never retries a financial mutation automatically.
+  if (path.startsWith("/funding")) return 180000;
+  if (path === "/reports") return 60000;
+  return 20000;
+}
 async function readJson(response: Response) {
   if (!response.headers.get("content-type")?.includes("application/json"))
     throw new ApiError(
@@ -99,7 +107,7 @@ export async function api<T>(
     );
   const mutation = body !== undefined;
   const request = async (signal: AbortSignal): Promise<T> => {
-    const deadline = AbortSignal.timeout(path === "/bootstrap" ? 12000 : 20000);
+    const deadline = AbortSignal.timeout(requestTimeoutMs(path));
     const tokenDeadline = AbortSignal.timeout(8000);
     let token: string | undefined;
     try {

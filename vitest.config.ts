@@ -1,6 +1,9 @@
 import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
+    // Bound concurrent SDK/PostgreSQL workers for cold installs and CI hosts.
+    // Keep existing assertions and timeouts unchanged.
+    maxWorkers: 4,
     setupFiles: ["./tests/setup.ts"],
     include: ["tests/**/*.test.{ts,tsx}"],
     environment: "node",

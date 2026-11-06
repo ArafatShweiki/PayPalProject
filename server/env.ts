@@ -2,6 +2,7 @@ import { config } from "dotenv";
 
 // Deployment environment wins; local settings precede the existing fallback files.
 if (
+  !process.env.VERCEL &&
   process.env.NODE_ENV !== "test" &&
   process.env.WALLETWISE_LOAD_ENV !== "false"
 )
