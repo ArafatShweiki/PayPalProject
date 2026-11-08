@@ -679,9 +679,19 @@ export function createWalletFixture() {
     if (path === "/rates/insight") return fixtureInsight(body);
     if (path === "/reports") {
       const b = z
-        .object({ frequency: z.enum(["weekly", "monthly"]) })
+        .object({
+          frequency: z.enum(["weekly", "monthly"]),
+          date: z.iso.date().optional(),
+          timezone: z.string().default("UTC"),
+        })
         .parse(body);
-      const result = buildReport(data, b.frequency);
+      const result = buildReport(
+        data,
+        b.frequency,
+        Date.now(),
+        b.date,
+        b.timezone,
+      );
       result.report.observations.unshift(
         "Sample savings insight using local calculations. No live AI request was made.",
       );

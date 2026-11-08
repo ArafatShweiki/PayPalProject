@@ -10,10 +10,16 @@ export function DatePicker({
   label,
   value,
   onChange,
+  disabled = false,
+  max,
+  placeholder = "Select date",
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  disabled?: boolean;
+  max?: string;
+  placeholder?: string;
 }) {
   const id = useId();
   const root = useRef<HTMLDivElement>(null);
@@ -35,11 +41,12 @@ export function DatePicker({
     trigger.current?.focus();
   }
   function choose(date: string) {
+    if (date && max && date > max) return;
     onChange(date);
     close();
   }
   useEffect(() => {
-    if (!open) return;
+    if (!open || disabled) return;
     function outside(event: PointerEvent) {
       if (!root.current?.contains(event.target as Node)) setOpen(false);
     }
@@ -66,7 +73,7 @@ export function DatePicker({
       window.removeEventListener("resize", reposition);
       window.removeEventListener("scroll", reposition, true);
     };
-  }, [open]);
+  }, [open, disabled]);
   useEffect(() => {
     if (open)
       panel.current
@@ -81,7 +88,7 @@ export function DatePicker({
         new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate(),
       ),
     );
-    setCursor(target);
+    setCursor(max && key(target) > max ? parse(max) : target);
   }
   return (
     <div
@@ -103,6 +110,7 @@ export function DatePicker({
       </span>
       <button
         ref={trigger}
+        disabled={disabled}
         type="button"
         className={`date-picker-trigger${value ? " has-value" : ""}`}
         aria-labelledby={`${id}-label ${id}-value`}
@@ -121,11 +129,11 @@ export function DatePicker({
                 day: "numeric",
                 year: "numeric",
               })
-            : "Select date"}
+            : placeholder}
         </span>
         <CalendarDays size={17} aria-hidden="true" />
       </button>
-      {open && (
+      {open && !disabled && (
         <div
           ref={panel}
           id={`${id}-calendar`}
@@ -167,6 +175,7 @@ export function DatePicker({
                 key={key(d)}
                 type="button"
                 data-date={key(d)}
+                disabled={!!max && key(d) > max}
                 tabIndex={key(d) === key(cursor) ? 0 : -1}
                 aria-label={d.toLocaleDateString(undefined, {
                   weekday: "long",
@@ -191,7 +200,7 @@ export function DatePicker({
                     e.preventDefault();
                     const next = new Date(d);
                     next.setDate(d.getDate() + offsets[e.key]);
-                    setCursor(next);
+                    setCursor(max && key(next) > max ? parse(max) : next);
                   }
                   if (e.key === "PageUp" || e.key === "PageDown") {
                     e.preventDefault();

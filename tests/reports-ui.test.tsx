@@ -78,9 +78,13 @@ it("selects weekly/monthly periods, sends a reporting date, shows skeletons and 
       ).disabled,
     ).toBe(false),
   );
-  fireEvent.change(screen.getByLabelText("Reporting date"), {
-    target: { value: "2026-09-15" },
-  });
+  fireEvent.click(screen.getByRole("button", { name: /^Reporting date / }));
+  const calendar = screen.getByRole("dialog", { name: "Reporting date date" });
+  const today = calendar.querySelector<HTMLButtonElement>(
+    '[aria-current="date"]',
+  )!;
+  const selectedDate = today.dataset.date;
+  fireEvent.click(today);
   const button = screen.getByRole("button", { name: "Generate report" });
   fireEvent.click(button);
   fireEvent.click(button);
@@ -98,7 +102,7 @@ it("selects weekly/monthly periods, sends a reporting date, shows skeletons and 
     "/reports",
     expect.objectContaining({
       frequency: "weekly",
-      date: "2026-09-15",
+      date: selectedDate,
       timezone: expect.any(String),
     }),
   );

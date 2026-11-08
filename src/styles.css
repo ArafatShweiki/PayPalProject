@@ -698,15 +698,15 @@ progress::-moz-progress-bar {
 .transaction > svg {
   color: #b3bec7;
 }
-.wallet-activity {
+:is(.wallet-activity, .roundup-history) {
   border-color: var(--widget-border);
   border-radius: var(--widget-radius);
   box-shadow: var(--widget-shadow);
 }
-.wallet-activity .transactions {
+:is(.wallet-activity, .roundup-history) .transactions {
   gap: 10px;
 }
-.wallet-activity .transaction {
+:is(.wallet-activity, .roundup-history) .transaction {
   padding: 14px 12px;
   border: 1px solid var(--widget-border);
   border-radius: 10px;
@@ -714,15 +714,15 @@ progress::-moz-progress-bar {
     background 160ms,
     border-color 160ms;
 }
-.wallet-activity .transaction:hover {
+:is(.wallet-activity, .roundup-history) .transaction:hover {
   border-color: #aebfce;
   background: #f5f8fb;
 }
-.wallet-activity .filters input,
-.wallet-activity .filters select {
+:is(.wallet-activity, .roundup-history) .filters input,
+:is(.wallet-activity, .roundup-history) .filters select {
   border-color: var(--widget-border);
 }
-.wallet-activity > .button {
+:is(.wallet-activity, .roundup-history) > .button {
   margin-top: 16px;
 }
 footer {
@@ -2691,16 +2691,36 @@ body:has(.app-shell) .info-footer {
     font-size: 28px;
   }
 }
+.report-period-controls {
+  margin-bottom: 24px;
+  padding: 16px;
+  border: 1px solid var(--widget-border);
+  border-radius: 10px;
+  background: #f7f9fc;
+}
 .report-controls {
   display: grid;
-  grid-template-columns: repeat(3, auto);
-  justify-content: end;
-  gap: 10px;
-  max-width: 100%;
+  grid-template-columns: minmax(140px, 1fr) minmax(180px, 1fr) auto;
+  align-items: end;
+  gap: 12px;
 }
-.report-controls input {
-  width: auto;
-  min-width: 0;
+.report-controls label,
+.report-controls .date-picker {
+  margin: 0;
+}
+.report-controls label {
+  gap: 7px;
+}
+.report-period-preview {
+  margin-top: 12px;
+  font-size: 12px;
+  color: #203e55;
+}
+.report-period-preview span {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  color: #6a7d8d;
 }
 .report-summary .recommendation {
   background: #f6f8fb;
@@ -2713,10 +2733,10 @@ body:has(.app-shell) .info-footer {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
 }
 .report-controls select {
-  width: auto;
-  min-width: 140px;
+  width: 100%;
+  min-width: 0;
 }
-.report-controls button {
+.report-controls > .button {
   min-height: 40px;
 }
 @media (max-width: 600px) {

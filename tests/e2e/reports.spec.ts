@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { mountWalletFixture, walletFixture } from "./fixtures";
+import { enterTestWallet, mountWalletFixture, walletFixture } from "./fixtures";
 import { buildReport } from "../../shared/reports";
 import { purchase } from "../../shared/ledger";
 import { readFileSync } from "node:fs";
@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 test("report date, structured AI insights, loading state and unavailable AI work together", async ({
   page,
 }) => {
+  await page.clock.setFixedTime(new Date("2026-11-08T12:00:00Z"));
   const state = walletFixture();
   state.createdAt = "2026-01-01T00:00:00Z";
   state.preferences.savings = "enabled";
@@ -69,7 +70,11 @@ test("report date, structured AI insights, loading state and unavailable AI work
     state.recommendations = result.recommendations;
     await route.fulfill({ json: state.reports[0] });
   });
-  await page.getByLabel("Reporting date").fill("2026-09-15");
+  await page.getByRole("button", { name: /^Reporting date / }).click();
+  const calendar = page.getByRole("dialog", { name: "Reporting date date" });
+  await calendar.getByRole("button", { name: "Previous month" }).click();
+  await calendar.getByRole("button", { name: "Previous month" }).click();
+  await calendar.locator('[data-date="2026-09-15"]').click();
   await page
     .getByRole("button", { name: "Generate report", exact: true })
     .click();
@@ -163,4 +168,91 @@ test("report date, structured AI insights, loading state and unavailable AI work
     fullPage: true,
     animations: "disabled",
   });
+});
+
+test("Smart Savings and Reports share calendar period selection and bordered round-up history", async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date("2026-11-08T12:00:00Z"));
+  await enterTestWallet(page);
+  await page
+    .getByRole("navigation")
+    .getByRole("button", { name: "Smart Savings", exact: true })
+    .click();
+  await expect(
+    page.getByText(
+      /Historical unassigned savings|Historical savings to assign/,
+    ),
+  ).toHaveCount(0);
+  await page
+    .getByLabel("Report frequency", { exact: true })
+    .selectOption("weekly");
+  await page.getByRole("button", { name: /^Reporting date / }).click();
+  const calendar = page.getByRole("dialog", { name: "Reporting date date" });
+  await calendar.locator('[data-date="2026-11-05"]').click();
+  await expect(page.locator(".report-period-preview")).toContainText(
+    "Oct 30, 2026 – Nov 5, 2026",
+  );
+  await page
+    .getByRole("button", { name: "Generate report", exact: true })
+    .click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const report = JSON.parse(
+          sessionStorage.getItem("test-wallet-fixture")!,
+        ).data.reports[0];
+        return {
+          frequency: report.frequency,
+          since: new Date(report.since).toLocaleDateString("en-CA", {
+            timeZone: report.timezone,
+          }),
+          until: new Date(report.until).toLocaleDateString("en-CA", {
+            timeZone: report.timezone,
+          }),
+        };
+      }),
+    )
+    .toEqual({
+      frequency: "weekly",
+      since: "2026-10-30",
+      until: "2026-11-06",
+    });
+  await expect(
+    page.getByRole("button", { name: "Generate report", exact: true }),
+  ).toBeEnabled();
+  const history = page.locator(".roundup-history");
+  await expect(history.locator(".transaction").first()).toHaveCSS(
+    "border-top-width",
+    "1px",
+  );
+  for (const width of [1440, 768, 375]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page
+      .locator(".report-period-controls")
+      .screenshot({
+        path: `test-results/savings-report-period-${width}.png`,
+        animations: "disabled",
+      });
+    await history.screenshot({
+      path: `test-results/roundup-history-${width}.png`,
+      animations: "disabled",
+    });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page
+    .getByRole("navigation")
+    .getByRole("button", { name: "Reports", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: /^Reporting date / }),
+  ).toContainText("Nov 5, 2026");
+  await page
+    .locator(".report-period-controls")
+    .screenshot({ path: "test-results/reports-period-desktop.png" });
 });

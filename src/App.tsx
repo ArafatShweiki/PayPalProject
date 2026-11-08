@@ -1,3 +1,4 @@
+import { ReportControls } from "./ReportControls";
 import { goalAmount } from "./savings";
 import { SavingsCoach } from "./SavingsCoach";
 import { ProductGuide } from "./ProductGuide";
@@ -468,6 +469,17 @@ export function App({
       ))}
     </div>
   );
+  const reportControls = (
+    <ReportControls
+      frequency={state.preferences.frequency}
+      date={reportDate}
+      disabled={busy || reportLoading}
+      generating={reportLoading}
+      onFrequency={(frequency) => void prefs({ frequency })}
+      onDate={setReportDate}
+      onGenerate={() => void generateReport()}
+    />
+  );
   const reportPanel = (report?: Report) => (
     <ReportSummary state={state} report={report} busy={busy} run={run} />
   );
@@ -786,15 +798,8 @@ export function App({
                 <PanelHead
                   title="Your savings advisor"
                   subtitle="Calculations first. Thoughtful explanations second."
-                  action={
-                    <Button
-                      disabled={busy}
-                      onClick={() => void generateReport()}
-                    >
-                      {busy ? "Working…" : "Generate report"}
-                    </Button>
-                  }
                 />
+                {reportControls}
                 {reportLoading && !state.reports.length ? (
                   <div role="status" aria-label="Generating report">
                     <CardSkeleton kind="report" />
@@ -814,7 +819,7 @@ export function App({
                   </>
                 )}
               </section>
-              <section className="panel">
+              <section className="panel roundup-history">
                 <PanelHead
                   title="Round-up history"
                   subtitle="Personal-goal refunds reverse savings. Circle savings require an approved return."
@@ -881,38 +886,8 @@ export function App({
                       ? "Seven days ending on the selected date"
                       : "Selected calendar month"
                   }
-                  action={
-                    <div className="actions report-controls">
-                      <select
-                        aria-label="Report frequency"
-                        disabled={busy}
-                        value={state.preferences.frequency}
-                        onChange={(e) =>
-                          void prefs({
-                            frequency: e.target.value as "weekly" | "monthly",
-                          })
-                        }
-                      >
-                        <option value="weekly">Weekly</option>
-                        <option value="monthly">Monthly</option>
-                      </select>
-                      <input
-                        type="date"
-                        aria-label="Reporting date"
-                        title="Leave empty to use today in your timezone"
-                        value={reportDate}
-                        disabled={busy}
-                        onChange={(e) => setReportDate(e.target.value)}
-                      />
-                      <Button
-                        disabled={busy}
-                        onClick={() => void generateReport()}
-                      >
-                        {busy ? "Generating…" : "Generate report"}
-                      </Button>
-                    </div>
-                  }
                 />
+                {reportControls}
                 {reportLoading ? (
                   <div role="status" aria-label="Generating report">
                     <div className="report-totals">
