@@ -1,3 +1,5 @@
+import { spendingMovement } from "../shared/spending";
+import { SavingsCoach } from "./SavingsCoach";
 import { DeferredSection } from "./DeferredSection";
 import type { Section } from "./useWalletData";
 import { snapshotRate, observationTime } from "../shared/market";
@@ -53,12 +55,12 @@ export function SpendingActivity({
         : state.ledger
             .filter(
               (e) =>
-                e.kind === "purchase" &&
+                (e.kind === "purchase" || e.kind === "refund") &&
                 e.currency === currency &&
                 new Date(e.at) >= start &&
                 new Date(e.at) < end,
             )
-            .reduce((sum, e) => sum + e.amount, 0);
+            .reduce((sum, e) => sum + spendingMovement(e).net, 0);
       return {
         label: start.toLocaleDateString(undefined, {
           month: "short",
@@ -68,13 +70,13 @@ export function SpendingActivity({
       };
     });
   }, [state.ledger, state.dashboard, days, currency]);
-  const max = Math.max(1, ...buckets.map((b) => b.amount));
+  const max = Math.max(1, ...buckets.map((b) => Math.abs(b.amount)));
   const Card = bare ? "div" : BentoCard;
   return (
     <Card className={bare ? undefined : "bento-half"}>
       <PanelHead
         title="Spending activity"
-        subtitle="Recorded purchases · refunds shown in activity"
+        subtitle="Net merchant spending - refunds reduce spending"
         action={<ChartNoAxesCombined size={19} />}
       />
       <div className="chart-controls">
@@ -103,8 +105,11 @@ export function SpendingActivity({
           )}
         </strong>
       </div>
-      {buckets.some((b) => b.amount > 0) ? (
-        <div className="spending-bars" aria-label="Daily spending chart">
+      {buckets.some((b) => b.amount !== 0) ? (
+        <div
+          className="spending-bars net-spending"
+          aria-label="Daily net spending chart"
+        >
           {buckets.map((b, i) => (
             <button
               key={b.label}
@@ -119,7 +124,10 @@ export function SpendingActivity({
               <span className="bar-track">
                 <span
                   style={{
-                    height: `${Math.max(b.amount ? 3 : 0, (b.amount / max) * 100)}%`,
+                    height: `${Math.max(b.amount ? 3 : 0, (Math.abs(b.amount) / max) * 48)}%`,
+                    bottom: b.amount >= 0 ? "50%" : undefined,
+                    top: b.amount < 0 ? "50%" : undefined,
+                    background: b.amount < 0 ? "var(--positive)" : undefined,
                   }}
                 />
               </span>
@@ -132,7 +140,7 @@ export function SpendingActivity({
           ))}
         </div>
       ) : (
-        <Empty>No purchases in this period and currency.</Empty>
+        <Empty>No net spending in this period and currency.</Empty>
       )}
     </Card>
   );
@@ -335,7 +343,7 @@ export function Dashboard({
         g.id === state.preferences.savingsDestination?.id &&
         !g.archived &&
         goalAmount(state, g.id) < g.target,
-    ) ?? state.goals[0];
+    ) ?? state.goals.find((g) => !g.archived);
   const now = new Date();
   const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const spending = state.dashboard
@@ -346,11 +354,27 @@ export function Dashboard({
         .filter(
           (e) =>
             e.currency === display &&
-            e.kind === "purchase" &&
+            (e.kind === "purchase" || e.kind === "refund") &&
             new Date(e.at).getMonth() === now.getMonth() &&
             new Date(e.at).getFullYear() === now.getFullYear(),
         )
-        .reduce((s, e) => s + e.amount, 0);
+        .reduce((s, e) => s + spendingMovement(e).net, 0);
+  const monthlyRows = state.dashboard?.dailySpending.filter(
+    (r) => r.currency === display && r.day.startsWith(month),
+  );
+  const monthlyEntries = state.ledger.filter(
+    (e) => e.currency === display && e.at.startsWith(month),
+  );
+  const gross = monthlyRows
+    ? monthlyRows.every((r) => r.gross !== undefined)
+      ? monthlyRows.reduce((n, r) => n + r.gross!, 0)
+      : null
+    : monthlyEntries.reduce((n, e) => n + spendingMovement(e).gross, 0);
+  const refunds = monthlyRows
+    ? monthlyRows.every((r) => r.refunds !== undefined)
+      ? monthlyRows.reduce((n, r) => n + r.refunds!, 0)
+      : null
+    : monthlyEntries.reduce((n, e) => n + spendingMovement(e).refunds, 0);
   const report = state.reports[0];
   const link = (label: string, page: Parameters<typeof onNavigate>[0]) => (
     <button className="text-link" onClick={() => onNavigate(page)}>
@@ -379,7 +403,7 @@ export function Dashboard({
         </div>
         <p>
           {latest
-            ? `${latest.market ? "Twelve Data quote" : "Indicative midpoint"} · ${date(latest.fetchedAt)}`
+            ? `${latest.market ? "Twelve Data quote" : "Indicative midpoint"} · ${time(latest.fetchedAt)}`
             : "Refresh currency rates to calculate a combined value."}
         </p>
         <div className="wallet-balances">
@@ -397,10 +421,20 @@ export function Dashboard({
           <Leaf size={19} />
         </span>
         <h2>Total Smart Savings</h2>
-        <strong className="metric-value">
-          {savings === null ? "—" : money(savings, display)}
-        </strong>
-        <small>Indicative value in {display}</small>
+        <DeferredSection
+          label="total savings"
+          compact
+          {...sections?.overview}
+          retry={() => onRetrySection?.("overview")}
+        >
+          <strong className="metric-value">
+            {savings === null ? "—" : money(savings, display)}
+          </strong>
+        </DeferredSection>
+        <small>
+          Personal savings plus your own locked Circle shares - indicative{" "}
+          {display} value
+        </small>
         <span className="pill green">
           {state.preferences.savings === "enabled"
             ? state.preferences.savingsDestination
@@ -422,15 +456,24 @@ export function Dashboard({
           retry={() => onRetrySection?.("overview")}
         >
           <strong className="metric-value">{money(spending, display)}</strong>
+          {gross !== null && refunds !== null && refunds > 0 && (
+            <small>
+              Purchases {money(gross, display)} - refunds{" "}
+              {money(refunds, display)}
+            </small>
+          )}
         </DeferredSection>
         <small>
           {now.toLocaleDateString(undefined, {
             month: "long",
             year: "numeric",
           })}{" "}
-          · {display} purchases
+          · {display} net spending
         </small>
-        <p>See how everyday purchases add up.</p>
+        <p>
+          Purchases minus merchant refunds. A negative total means refunds
+          exceeded purchases this month.
+        </p>
         {link("View activity", "My Wallet")}
       </BentoCard>
       <BentoCard className="bento-half">
@@ -452,6 +495,12 @@ export function Dashboard({
           <CurrencyTrends state={state} bare />
         </DeferredSection>
       </BentoCard>
+      <SavingsCoach
+        state={state}
+        compact
+        onExplore={() => onNavigate("Smart Savings")}
+        onRules={() => onNavigate("Smart Savings")}
+      />
       <BentoCard className="bento-half recent-bento">
         <PanelHead
           title="Recent activity"
@@ -472,7 +521,7 @@ export function Dashboard({
           />
         </DeferredSection>
       </BentoCard>
-      <BentoCard className="goal-bento">
+      <BentoCard className="goal-bento bento-half">
         <PanelHead
           title="Savings progress"
           subtitle="A little closer, every day"
@@ -521,7 +570,7 @@ export function Dashboard({
           )}
         </DeferredSection>
       </BentoCard>
-      <div className="bento-stack">
+      <div className="bento-stack bento-half">
         <DeferredSection
           label="alerts and insights"
           {...sections?.overview}

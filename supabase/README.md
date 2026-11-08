@@ -101,3 +101,14 @@ Apply `migrations/202610300003_progressive_loading.sql` after the existing migra
 Bootstrap reads the profile once, then wallet balances and rules concurrently. Existing accounts do not run initialization again. Missing wallets use the established zero-initialization RPC once, followed by validation; a failed repair returns an error. Dashboard projections exclude legacy JSON ledger/operation history, return the latest five saved reports, and compute complete-ledger spending/goal summaries. Activity uses stable timestamp/ID cursors and database currency/category/date/savings filters; full history is not loaded at startup. Existing SQL financial mutations and explicit report calculations keep their established data sources.
 
 `SUPABASE_REQUEST_TIMEOUT_MS=8000` bounds database requests. SDK retries are disabled so application deadlines/idempotency govern recovery. `PERFORMANCE_DIAGNOSTICS=true` exposes fixed-label timing durations only outside production. No cloud migration was applied by this performance change.
+
+
+## Product enhancements (2026-11-06)
+
+The savings outlook, optional first-use guide, Circle timeline/milestones and reviewed recommendation validation require `202611060002_product_enhancements.sql` after all preceding migrations, including `202611060001_backend_storage.sql`. Validate in an isolated Preview project before manually applying to the intended hosted project. No hosted migration or deployment was executed by this change. No new environment variable is required.
+
+See [the product enhancement report](../PRODUCT_ENHANCEMENT_REPORT.md), [executed enhancement tests](../ENHANCEMENT_TEST_REPORT.md) and [the Sandbox demo guide](../HACKATHON_DEMO_GUIDE.md) for architecture, verification and external-provider limitations.
+
+### Personal goal deletion
+
+Apply `migrations/202611080001_delete_savings_goal.sql` before deploying the goal deletion UI/API. It adds the service-only `walletwise_delete_savings_goal` RPC: the goal balance returns atomically to the available wallet in the same currency, the goal disappears from account state, and an affected default is paused. A deleted goal identity remains solely for ledger references; historical transactions are not erased. Retries cannot return funds twice. Subsequent merchant refunds retain already-returned savings. No hosted migration is applied automatically.

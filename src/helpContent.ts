@@ -7,6 +7,27 @@ export type Article = {
 };
 export const articles: Article[] = [
   {
+    title: "Resume the getting started guide",
+    category: "Getting started",
+    steps: [
+      "The optional Home checklist follows actual funding, goal, savings and purchase records. Exploring a Circle is optional.",
+      "Skipping the guide preserves your account. Use this link to return to it at any time.",
+    ],
+    link: "/?guide=resume#Home",
+    linkText: "Resume setup guide",
+  },
+  {
+    title: "Understand your savings outlook",
+    category: "Savings",
+    steps: [
+      "Smart Savings includes a coach for personal goals. Completion estimates require at least fourteen full days of history and three positive contributions on two different days within the last fifty-six days.",
+      "Signed reversals reduce the pace. Moving existing savings between goals is excluded from the pace. Solid chart lines show recorded balances; dashed lines show a hypothetical future.",
+      "Changing the comparison amount changes no settings. Review rules separately. Gemini provides optional explanations and cannot move funds or change preferences.",
+    ],
+    link: "/#Smart%20Savings",
+    linkText: "Open your savings outlook",
+  },
+  {
     title: "Save together with Savings Circles",
     category: "Savings",
     steps: [
@@ -78,7 +99,7 @@ export const articles: Article[] = [
     steps: [
       "Choose New savings goal and enter its name, currency, target and optional date. Select Make this my default savings goal to direct future round-ups there. Other goals do not change your default.",
       "Drag, swipe, use Previous/Next, or focus a goal card and use Left/Right, Home or End to inspect goals. Browsing updates the details panel without changing your destination.",
-      "Choose Set as default savings goal in Goal options, or use a Savings Circle for Smart Savings. Round-ups from purchases in other currencies convert only the savings amount using a fresh recorded quote. Existing savings stay in their recorded destinations. Historical unassigned savings can be explicitly assigned to a personal goal in the same currency.",
+      "Choose Set as default savings goal in Goal options, or use a Savings Circle for Smart Savings. Round-ups from purchases in other currencies convert only the savings amount using a fresh recorded quote. Existing savings stay in their recorded destinations.",
     ],
     link: "/#Smart%20Savings",
     linkText: "Open Smart Savings",

@@ -59,6 +59,8 @@ export type CircleMember = {
   owner: boolean;
 };
 export type CircleProposal = {
+  createdAt?: string;
+  creatorId?: string | null;
   id: string;
   kind: "withdraw" | "target" | "return_all" | "return_member" | "owner";
   amount: string;
@@ -92,4 +94,12 @@ export type CircleDetail = Circle & {
     details: Record<string, unknown>;
   }[];
   proposals: CircleProposal[];
+};
+
+export type TimelineEvent = {
+  id: string;
+  at: string;
+  memberId: string | null;
+  event: string;
+  details: Record<string, unknown>;
 };

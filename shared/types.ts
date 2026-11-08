@@ -102,6 +102,11 @@ export type Notice = {
   read: boolean;
 };
 export type Recommendation = {
+  settingsSnapshot?: {
+    increments: Balances;
+    caps: Balances;
+    destination: SavingsDestination | null;
+  };
   estimatedSavings?: number;
   recordedSavings?: number;
   id: string;
@@ -205,6 +210,11 @@ export type OnboardingStatus = {
   notifications: boolean;
 };
 export type UserData = {
+  guide?: {
+    dismissed?: boolean;
+    walletViewed?: boolean;
+    circlesViewed?: boolean;
+  };
   circleEntries?: {
     currency: Currency;
     amount: number;
@@ -230,7 +240,13 @@ export type State = UserData & {
   dashboard?: {
     circleSavings?: Balances;
     generalSavings?: Balances;
-    dailySpending: { day: string; currency: Currency; amount: number }[];
+    dailySpending: {
+      day: string;
+      currency: Currency;
+      amount: number;
+      gross?: number;
+      refunds?: number;
+    }[];
     goalTotals: Record<string, number>;
   };
   loadingSections?: string[];

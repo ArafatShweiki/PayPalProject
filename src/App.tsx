@@ -1,9 +1,8 @@
+import { goalAmount } from "./savings";
+import { SavingsCoach } from "./SavingsCoach";
+import { ProductGuide } from "./ProductGuide";
 import { Circles, Invitation } from "./Circles";
-import {
-  SavingsSetup,
-  HistoricalSavings,
-  SavingsDestinationPanel,
-} from "./SavingsSetup";
+import { SavingsSetup, SavingsDestinationPanel } from "./SavingsSetup";
 import { GoalPurchase } from "./GoalPurchase";
 import type { SavingsDestination, SavingsOptions } from "../shared/circles";
 import { useWalletData } from "./useWalletData";
@@ -38,7 +37,7 @@ import {
 } from "lucide-react";
 import { api, logout } from "./api";
 import { currencies, money, type Currency } from "../shared/money";
-import type { State, Entry, Preferences, Report } from "../shared/types";
+import type { State, Entry, Preferences, Report, Goal } from "../shared/types";
 import { Button, Empty, Modal, PanelHead, time } from "./ui";
 import {
   Transactions,
@@ -112,6 +111,7 @@ export function App({
   const [requestError, setRequestError] = useState<unknown>();
   const [notice, setNotice] = useState("");
   const [inspectedGoalId, setInspectedGoalId] = useState<string>();
+  const [deletingGoal, setDeletingGoal] = useState<Goal>();
   const [busy, setBusy] = useState(false);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportDate, setReportDate] = useState("");
@@ -610,6 +610,10 @@ export function App({
           )}
           {invitationOpen && (
             <Invitation
+              onDismiss={() => {
+                setInvitationOpen(false);
+                go("Home");
+              }}
               authenticated
               onJoined={() => {
                 setInvitationOpen(false);
@@ -617,6 +621,18 @@ export function App({
               }}
             />
           )}
+          <ProductGuide
+            state={state}
+            page={page}
+            onNavigate={go}
+            onFund={() => setModal("funding")}
+            onGoal={() => setModal("goal")}
+            onPurchase={() => setModal("purchase")}
+            onSavings={() => {
+              setPendingPreferences(undefined);
+              setModal("savings-setup");
+            }}
+          />
           {page === "Savings Circles" && (
             <Circles
               state={state}
@@ -652,7 +668,7 @@ export function App({
                   <Button onClick={() => setModal("funding")}>Add Funds</Button>
                 </div>
               </div>
-              <section className="panel">
+              <section className="panel wallet-activity">
                 <PanelHead
                   title="Wallet activity"
                   subtitle="Select a row for ledger details."
@@ -717,16 +733,18 @@ export function App({
                   </div>
                 </section>
               )}
+              <SavingsCoach
+                state={state}
+                onExplore={() => go("Smart Savings")}
+                onReports={() => go("Reports")}
+                onRules={() => go("Settings")}
+              />
               <SavingsDestinationPanel
                 state={state}
                 onChoose={() => {
                   setPendingPreferences(undefined);
                   setModal("savings-setup");
                 }}
-              />
-              <HistoricalSavings
-                onUpdated={refresh}
-                goalsRevision={state.goals}
               />
               <section className="panel">
                 <PanelHead
@@ -757,12 +775,10 @@ export function App({
                       void saveDestination({ kind: "goal", id: goal.id })
                     }
                     onClearDefault={() => void prefs({ savings: "disabled" })}
-                    onArchive={(goal) =>
-                      void run(
-                        () => api(`/goals/${goal.id}`, {}, "DELETE"),
-                        "Goal archived. Existing savings are preserved.",
-                      )
-                    }
+                    onDelete={(goal) => {
+                      setError("");
+                      setDeletingGoal(goal);
+                    }}
                   />
                 </DeferredSection>
               </section>
@@ -1046,6 +1062,51 @@ export function App({
                 setModal(null);
             }}
           />
+        </Modal>
+      )}
+      {deletingGoal && (
+        <Modal
+          title="Delete savings goal?"
+          onClose={() => {
+            if (!busy) setDeletingGoal(undefined);
+          }}
+          error={error}
+        >
+          <p>
+            Delete {deletingGoal.name}? Its current savings of{" "}
+            {money(goalAmount(state, deletingGoal.id), deletingGoal.currency)}{" "}
+            will return to your main {deletingGoal.currency} wallet, without
+            currency conversion.
+          </p>
+          <p>
+            The goal will be removed. Transaction history stays available. If
+            this is your default goal, Smart Savings will pause until you choose
+            another destination.
+          </p>
+          <div className="actions">
+            <Button
+              secondary
+              disabled={busy}
+              onClick={() => setDeletingGoal(undefined)}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={busy}
+              onClick={async () => {
+                if (busy) return;
+                if (
+                  await run(
+                    () => api(`/goals/${deletingGoal.id}`, {}, "DELETE"),
+                    "Goal deleted. Its savings were returned to your main wallet in the same currency.",
+                  )
+                )
+                  setDeletingGoal(undefined);
+              }}
+            >
+              {busy ? "Deleting..." : "Delete goal and return funds"}
+            </Button>
+          </div>
         </Modal>
       )}
       {modal === "goal" && (

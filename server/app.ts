@@ -1,3 +1,4 @@
+import { coachRouter } from "./coach.js";
 import {
   circlesRouter,
   invitationPublicRouter,
@@ -35,7 +36,12 @@ import { z } from "zod";
 import { currencies, minor, convert } from "../shared/money.js";
 import type { Entry, Preferences, UserData } from "../shared/types.js";
 import { append, balances, idempotent } from "./ledger.js";
-import { userRead, userUpdate, snapshots, registerUserIdentity } from "./store.js";
+import {
+  userRead,
+  userUpdate,
+  snapshots,
+  registerUserIdentity,
+} from "./store.js";
 import { refreshRates, stale, rateStaleMs } from "./rates.js";
 
 import { currencyInsight } from "./currency-insights.js";
@@ -186,7 +192,11 @@ app.use("/api", (req, res, next) => {
       120,
       true,
     )(req, res, next);
-  if (path === "/reports" || path === "/rates/insight")
+  if (
+    path === "/reports" ||
+    path === "/rates/insight" ||
+    path === "/savings/coach/explain"
+  )
     return limitMiddleware("ai", "RATE_LIMIT_AI", 5, true)(req, res, next);
   if (path === "/rates/refresh")
     return limitMiddleware(
@@ -204,6 +214,7 @@ app.use("/api", (req, res, next) => {
     )(req, res, next);
   if (
     path === "/preferences" ||
+    path === "/guide" ||
     path.startsWith("/onboarding") ||
     path.startsWith("/recommendations/")
   )
@@ -310,6 +321,7 @@ app.use("/api", async (req, res, next) => {
   next();
 });
 app.use("/api", progressiveRouter);
+app.use("/api", coachRouter);
 app.get("/api/state", async (_req, res) => {
   if (res.locals.authMode === "auth0" && supabaseEnabled()) {
     const { data, walletBalances, savingsBalances } = await databaseState(
@@ -515,8 +527,8 @@ app.post("/api/goals", async (req, res) => {
 });
 app.delete("/api/goals/:id", async (req, res) => {
   const goalId = z.uuid().parse(req.params.id);
-  const { error } = await getServerSupabase().rpc(
-    "walletwise_archive_savings_goal",
+  const { data, error } = await getServerSupabase().rpc(
+    "walletwise_delete_savings_goal",
     {
       p_sub: res.locals.sub,
       p_uid: res.locals.uid,
@@ -524,7 +536,7 @@ app.delete("/api/goals/:id", async (req, res) => {
     },
   );
   if (error) throw databaseError(error);
-  res.json({ archived: true });
+  res.json(data);
 });
 app.get("/api/rates/live", async (_req, res) => {
   if (!forexEnabled()) {

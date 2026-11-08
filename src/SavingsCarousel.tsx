@@ -28,7 +28,7 @@ export function SavingsCarousel({
   onCreate,
   onDestination,
   onClearDefault,
-  onArchive,
+  onDelete,
   selectedGoalId,
   onInspect,
 }: {
@@ -37,7 +37,7 @@ export function SavingsCarousel({
   onCreate: () => void;
   onDestination: (goal: Goal) => void;
   onClearDefault?: (goal: Goal) => void;
-  onArchive?: (goal: Goal) => void;
+  onDelete?: (goal: Goal) => void;
   selectedGoalId?: string;
   onInspect?: (id: string) => void;
 }) {
@@ -373,7 +373,7 @@ export function SavingsCarousel({
               {busy ? "Saving…" : "Set as default savings goal"}
             </Button>
           )}
-          {(eligible || (!goal.archived && onArchive)) && (
+          {(eligible || onDelete) && (
             <details className="goal-menu">
               <summary>Goal options</summary>
               <div className="actions">
@@ -386,13 +386,13 @@ export function SavingsCarousel({
                     Pause Smart Savings
                   </Button>
                 )}
-                {!goal.archived && onArchive && (
+                {onDelete && (
                   <Button
                     secondary
                     disabled={busy}
-                    onClick={() => onArchive(goal)}
+                    onClick={() => onDelete(goal)}
                   >
-                    Archive goal
+                    Delete goal
                   </Button>
                 )}
               </div>

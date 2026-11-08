@@ -7,3 +7,13 @@ process.env.DATABASE_PATH = join(
   mkdtempSync(join(tmpdir(), "dream-piggy-tests-")),
   "cache.db",
 );
+
+// jsdom does not implement native dialog methods; browser coverage verifies actual focus behavior.
+if (typeof HTMLDialogElement !== "undefined") {
+  HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute("open", "");
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute("open");
+  };
+}

@@ -906,3 +906,207 @@ it("RLS and RPC permissions keep unjoined circles and private wallet data inacce
   ).rejects.toThrow(/permission denied/);
   await db.exec("reset role;set role service_role");
 });
+
+it("records all crossed milestones once and exposes a private ordered timeline", async () => {
+  const sub = await account(),
+    outsider = await account(),
+    c = await circle(sub, 10000);
+  await contribute(sub, c.id, 8000);
+  let d = await detail(sub, c.id);
+  expect(d.balance).toBe("8000");
+  expect(
+    d.activity
+      .filter((e) => e.event === "milestone")
+      .map((e) => e.details.threshold)
+      .sort(),
+  ).toEqual([25, 50, 75]);
+  await contribute(sub, c.id, 1000);
+  d = await detail(sub, c.id);
+  expect(d.activity.filter((e) => e.event === "milestone")).toHaveLength(3);
+  const timeline = await rpc<{ id: string; at: string; event: string }[]>(
+    "walletwise_circle_timeline",
+    [sub, c.id],
+  );
+  expect(timeline.some((e) => e.event === "contribution")).toBe(true);
+  expect(timeline.some((e) => e.event === "milestone")).toBe(true);
+  expect(timeline.map((e) => e.at)).toEqual(
+    timeline
+      .map((e) => e.at)
+      .sort()
+      .reverse(),
+  );
+  await expect(
+    rpc("walletwise_circle_timeline", [outsider, c.id]),
+  ).rejects.toThrow(/access denied/i);
+  const first = timeline[0];
+  const tail = await rpc<{ id: string }[]>("walletwise_circle_timeline", [
+    sub,
+    c.id,
+    first.at,
+    first.id,
+  ]);
+  expect(tail.some((e) => e.id === first.id)).toBe(false);
+});
+it("does not award old thresholds after a unanimous return and new contributions", async () => {
+  const sub = await account(),
+    c = await circle(sub, 10000);
+  await contribute(sub, c.id, 6000);
+  const p = await command(sub, "propose", c.id, {
+    kind: "return_all",
+    amount: 6000,
+    currency: "USD",
+    reason: "Return",
+    destination: null,
+  });
+  await command(sub, "vote", c.id, {
+    proposalId: p.proposalId,
+    decision: "Approve",
+  });
+  await command(sub, "execute", c.id, { proposalId: p.proposalId });
+  await contribute(sub, c.id, 6000);
+  const d = await detail(sub, c.id);
+  expect(d.activity.filter((e) => e.event === "milestone")).toHaveLength(2);
+});
+it("uses coherent owned coach totals and excludes reassignments from new saving pace", async () => {
+  const sub = await account(),
+    other = await account(),
+    g = await goal(sub);
+  await buy(sub, "USD", 1235, await quote(sub, "goal", g.id, "USD", "USD", 65));
+  const input = await rpc<import("../shared/coach").CoachInput>(
+    "walletwise_coach",
+    [sub, sub],
+  );
+  expect(input.goals.find((v) => v.id === g.id)?.saved).toBeGreaterThan(0);
+  expect(input.samples.some((v) => v.goalId === g.id)).toBe(true);
+  expect(input.available.USD).toBeGreaterThan(0);
+  expect(await rpc("walletwise_coach", [other, sub])).toBeNull();
+  const dashboard = await rpc<{
+    dashboard: {
+      dailySpending: { amount: string; gross: string; refunds: string }[];
+    };
+  }>("walletwise_dashboard", [sub, sub, "UTC"]);
+  const row = dashboard.dashboard.dailySpending[0];
+  expect(Number(row.amount)).toBe(Number(row.gross) - Number(row.refunds));
+});
+it("rejects direct client access to the new privileged functions and milestone records", async () => {
+  await db.exec("reset role;set role authenticated");
+  await expect(rpc("walletwise_coach", ["fake", "fake"])).rejects.toThrow(
+    /permission denied/,
+  );
+  await expect(db.query("select * from circle_milestones")).rejects.toThrow(
+    /permission denied/,
+  );
+});
+
+it("validates full savings settings and ledger revisions before accepting a reviewed rule", async () => {
+  const sub = await account(),
+    g = await goal(sub);
+  const snapshot = () =>
+    scalar<{ increments: object; caps: object; destination: object }>(
+      "select jsonb_build_object('increments',(select jsonb_object_agg(currency,increment_minor)from savings_rules where auth0_sub=$1),'caps',(select jsonb_object_agg(currency,cap_minor)from savings_rules where auth0_sub=$1),'destination',wallet_preferences->'savingsDestination') from profiles where auth0_sub=$1",
+      [sub],
+    );
+  const settings = await snapshot();
+  const revision = await scalar<string>(
+    "select id::text from transactions where auth0_sub=$1 order by occurred_at desc,id desc limit 1",
+    [sub],
+  );
+  const current = await scalar<number>(
+    "select increment_minor::int from savings_rules where auth0_sub=$1 and currency='USD'",
+    [sub],
+  );
+  const cap = await scalar<number>(
+    "select cap_minor::int from savings_rules where auth0_sub=$1 and currency='USD'",
+    [sub],
+  );
+  const other = await goal(sub, "USD", false);
+  await rpc("walletwise_set_savings_destination", [
+    sub,
+    "goal",
+    other.id,
+    true,
+  ]);
+  await expect(
+    rpc("walletwise_accept_reviewed_rule", [
+      sub,
+      "USD",
+      current,
+      cap,
+      current * 2,
+      revision,
+      JSON.stringify(settings),
+    ]),
+  ).rejects.toThrow(/settings changed/i);
+  await rpc("walletwise_set_savings_destination", [sub, "goal", g.id, true]);
+  await rpc("walletwise_accept_reviewed_rule", [
+    sub,
+    "USD",
+    current,
+    cap,
+    current * 2,
+    revision,
+    JSON.stringify(settings),
+  ]);
+  expect(
+    await scalar<number>(
+      "select increment_minor::int from savings_rules where auth0_sub=$1 and currency='USD'",
+      [sub],
+    ),
+  ).toBe(current * 2);
+  const fresh = await snapshot();
+  await buy(sub, "USD", 100, null, true);
+  await expect(
+    rpc("walletwise_accept_reviewed_rule", [
+      sub,
+      "USD",
+      current * 2,
+      cap,
+      current * 4,
+      revision,
+      JSON.stringify(fresh),
+    ]),
+  ).rejects.toThrow(/settings changed/i);
+});
+it("retains signed refund spending when refunds exceed this month's purchases", async () => {
+  const sub = await account();
+  await goal(sub);
+  const tx = await buy(
+    sub,
+    "USD",
+    1235,
+    await quote(
+      sub,
+      "goal",
+      (
+        await rpc<import("../shared/coach").CoachInput>("walletwise_coach", [
+          sub,
+          sub,
+        ])
+      ).goals[0].id,
+      "USD",
+      "USD",
+      65,
+    ),
+  );
+  await db.exec("reset role");
+  await db.query(
+    "update transactions set occurred_at=date_trunc('month',now())-interval '1 day' where id=$1",
+    [tx.id],
+  );
+  await db.exec("set role service_role");
+  await rpc("walletwise_goal_refund", [sub, randomUUID(), tx.id]);
+  const d = await rpc<{
+    dashboard: {
+      dailySpending: {
+        day: string;
+        amount: string;
+        gross: string;
+        refunds: string;
+      }[];
+    };
+  }>("walletwise_dashboard", [sub, sub, "UTC"]);
+  const month = new Date().toISOString().slice(0, 7),
+    rows = d.dashboard.dailySpending.filter((r) => r.day.startsWith(month));
+  expect(rows.reduce((n, r) => n + Number(r.amount), 0)).toBe(-1235);
+  expect(rows.reduce((n, r) => n + Number(r.refunds), 0)).toBe(1235);
+});

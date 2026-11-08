@@ -63,3 +63,14 @@ it("allows new members to explicitly join", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "Join Circle" }));
   await vi.waitFor(() => expect(onJoined).toHaveBeenCalledOnce());
 });
+
+it("allows an authenticated visitor to defer joining without a financial or membership mutation", async () => {
+  vi.mocked(api).mockResolvedValue({ ...preview, alreadyMember: false });
+  const dismiss = vi.fn();
+  render(<Invitation authenticated onDismiss={dismiss} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Not Now" }));
+  expect(dismiss).toHaveBeenCalledOnce();
+  expect(vi.mocked(api).mock.calls.some(([p]) => p === "/circles/join")).toBe(
+    false,
+  );
+});

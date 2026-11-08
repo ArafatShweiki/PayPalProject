@@ -1,3 +1,4 @@
+import { buildCoach, type CoachInput } from "../../shared/coach";
 // Browser integration fixture: real PostgreSQL migrations and financial RPCs,
 // test identities and explicit test exchange rates. Never imported by the app.
 import { PGlite } from "@electric-sql/pglite";
@@ -197,6 +198,15 @@ export class CircleLedgerFixture {
           sub,
           JSON.stringify(body),
         ]);
+      else if (
+        path.startsWith("/goals/") &&
+        route.request().method() === "DELETE"
+      )
+        result = await this.rpc("walletwise_delete_savings_goal", [
+          sub,
+          sub,
+          path.slice(7),
+        ]);
       else if (path === "/goals")
         result = await this.rpc("walletwise_create_savings_goal", [
           sub,
@@ -250,7 +260,20 @@ export class CircleLedgerFixture {
           body.requestId,
           body.id,
         ]);
-      else if (path === "/circles" && req.method() === "GET")
+      else if (path === "/savings/coach")
+        result = buildCoach(
+          await this.rpc<CoachInput>("walletwise_coach", [sub, sub]),
+        );
+      else if (path === "/guide") result = {};
+      else if (path.endsWith("/timeline")) {
+        const rows = await this.rpc<unknown[]>("walletwise_circle_timeline", [
+          sub,
+          path.split("/")[2],
+          url.searchParams.get("before"),
+          url.searchParams.get("id"),
+        ]);
+        result = { events: rows.slice(0, 25), more: rows.length > 25 };
+      } else if (path === "/circles" && req.method() === "GET")
         result = await this.rpc("walletwise_circles", [sub]);
       else if (path === "/circles")
         result = await this.rpc("walletwise_circle_command", [

@@ -8,7 +8,18 @@ test("report date, structured AI insights, loading state and unavailable AI work
   page,
 }) => {
   const state = walletFixture();
+  state.createdAt = "2026-01-01T00:00:00Z";
   state.preferences.savings = "enabled";
+  for (const [currency, current, previous] of [
+    ["ILS", 145620, 162400],
+    ["USD", 24850, 19800],
+    ["JOD", 92450, 106200],
+  ] as const) {
+    purchase(state, currency, previous, "Prior activity", "Shopping").at =
+      "2026-08-15T12:00:00Z";
+    purchase(state, currency, current, "Recorded activity", "Shopping").at =
+      "2026-09-15T12:00:00Z";
+  }
   state.preferences.frequency = "monthly";
   purchase(state, "ILS", 2340, "Private merchant", "Other").at =
     "2026-09-15T12:00:00Z";
@@ -66,6 +77,12 @@ test("report date, structured AI insights, loading state and unavailable AI work
     page.getByRole("status", { name: "Generating report" }),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: /Generating/ })).toBeDisabled();
+  await page.setViewportSize({ width: 390, height: 1000 });
+  await page.screenshot({
+    path: "test-results/report-loading-mobile.png",
+    fullPage: true,
+    animations: "disabled",
+  });
   finish();
   await expect(
     page.getByRole("region", { name: "AI financial insights" }),
@@ -79,6 +96,24 @@ test("report date, structured AI insights, loading state and unavailable AI work
       .first(),
   ).toBeVisible();
   await expect(page.locator(".report-totals article")).toHaveCount(3);
+  await expect(page.getByText("Report saved.", { exact: true })).toBeHidden();
+  for (const width of [1440, 820, 390, 320]) {
+    await page.setViewportSize({ width, height: 1000 });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await page.screenshot({
+      path: `test-results/report-viewport-${width}.png`,
+      animations: "disabled",
+    });
+    await page.screenshot({
+      path: `test-results/report-summary-${width}.png`,
+      fullPage: true,
+      animations: "disabled",
+    });
+  }
   await page
     .locator("details")
     .filter({ hasText: "Monthly review" })
@@ -117,6 +152,11 @@ test("report date, structured AI insights, loading state and unavailable AI work
         () => document.documentElement.scrollWidth <= innerWidth,
       ),
     ).toBe(true);
+    await page.screenshot({
+      path: `test-results/report-fallback-${width}.png`,
+      fullPage: true,
+      animations: "disabled",
+    });
   }
   await page.screenshot({
     path: "test-results/gemini-reports-mobile.png",

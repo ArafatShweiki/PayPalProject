@@ -113,7 +113,7 @@ it("projects bounded dashboard data and exact aggregates without transferring pr
   expect(data).not.toHaveProperty("operations");
   expect(
     data.dashboard.dailySpending.reduce((sum, r) => sum + Number(r.amount), 0),
-  ).toBe(6100);
+  ).toBe(6000); // 6100 in purchases minus the 100 merchant refund.
   expect(data.dashboard.goalTotals[goal]).toBe("600");
 });
 it("paginates complete activity with a stable cursor, without duplicates or losing equal timestamps", async () => {

@@ -33,6 +33,7 @@ beforeEach(() => {
     "matchMedia",
     vi.fn(() => ({ matches: true })),
   );
+  vi.mocked(api).mockResolvedValue(undefined as never);
   HTMLElement.prototype.scrollTo = vi.fn();
   location.hash = "Home";
 });
@@ -59,7 +60,7 @@ it.each(["auth0"] as const)(
     expect(screen.getByText("₪6,500.00")).toBeTruthy();
     expect(screen.getByText("No rate observations yet.")).toBeTruthy();
     expect(
-      screen.getByText("No purchases in this period and currency."),
+      screen.getByText("No net spending in this period and currency."),
     ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "View all" }));
     expect(navigate).toHaveBeenCalledWith("My Wallet");
@@ -235,7 +236,11 @@ it("filters spending by currency and period and exposes exact chart amounts", ()
     saved: 1,
     description: "Coffee",
     category: "Food",
-    postings: [],
+    postings: [
+      { currency: "USD", account: "external", amount: 1299 },
+      { currency: "USD", account: "available", amount: -1300 },
+      { currency: "USD", account: "savings", amount: 1 },
+    ],
   });
   render(<SpendingActivity state={state} />);
   fireEvent.change(screen.getByLabelText("Spending currency"), {

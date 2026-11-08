@@ -1,0 +1,24 @@
+# Copy to ignored .env.live.local. No application .env values are inherited.
+# Leave unset until an isolated Preview and separate test Supabase project exist.
+LIVE_PREVIEW_ORIGIN=
+LIVE_SUPABASE_TEST_URL=
+LIVE_SUPABASE_TEST_PROJECT=
+# Secret/service-role key for ONLY the explicitly authorized test project.
+LIVE_SUPABASE_TEST_SECRET_KEY=
+# Domain without https://; client must match Preview /api/config.
+LIVE_AUTH0_TEST_DOMAIN=
+LIVE_AUTH0_TEST_CLIENT_ID=
+# Two existing dedicated database-connection accounts; do not use personal users.
+LIVE_USER_A_EMAIL=
+LIVE_USER_A_PASSWORD=
+LIVE_USER_A_SUB=
+LIVE_USER_B_EMAIL=
+LIVE_USER_B_PASSWORD=
+LIVE_USER_B_SUB=
+LIVE_ACCOUNTS_AUTHORIZED=false
+# Explicit opt-in: balanced adjustment postings through the existing privileged
+# transaction RPC in the isolated test project. No direct financial-table writes.
+LIVE_ALLOW_TEST_FIXTURE_FUNDS=false
+# Optional safe identifier, 1-32 alphanumeric/underscore/hyphen characters.
+# Reuse ONLY to recover/reconcile an interrupted run; avoid concurrent runs.
+# LIVE_RUN_ID=

@@ -1,3 +1,4 @@
+import { buildCoach } from "../../shared/coach";
 import type { Bootstrap, OnboardingStatus, State } from "../../shared/types";
 import {
   initialUser,
@@ -32,6 +33,41 @@ export function profileBootstrap(status: OnboardingStatus): Bootstrap {
   return { onboarding: status, ...(status.complete ? { state } : {}) };
 }
 export function loadingResponse(path: string, state: State) {
+  if (path === "/savings/coach")
+    return buildCoach({
+      asOf: new Date().toISOString(),
+      goals: state.goals.map((g) => ({ ...g, saved: goalSaved(state, g.id) })),
+      samples: state.ledger
+        .filter((e) => e.goalId)
+        .map((e) => ({
+          goalId: e.goalId!,
+          at: e.at,
+          amount:
+            e.allocationDelta ??
+            e.postings
+              .filter((p) => p.account === "savings")
+              .reduce((s, p) => s + p.amount, 0),
+          paceAmount: e.allocationDelta
+            ? 0
+            : e.postings
+                .filter((p) => p.account === "savings")
+                .reduce((s, p) => s + p.amount, 0),
+        })),
+      available: state.balances,
+      guide: {
+        dismissed: state.guide?.dismissed ?? false,
+        walletViewed: state.guide?.walletViewed ?? false,
+        circlesViewed: state.guide?.circlesViewed ?? false,
+      },
+      steps: {
+        funded: state.ledger.some(
+          (e) => e.kind === "funding" && e.status === "COMPLETED",
+        ),
+        goal: state.goals.length > 0,
+        enabled: state.preferences.savings === "enabled",
+        purchased: state.ledger.some((e) => e.kind === "purchase"),
+      },
+    });
   if (path === "/savings/options")
     return {
       destination: state.preferences.savingsDestination ?? null,

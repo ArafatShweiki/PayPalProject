@@ -255,7 +255,9 @@ export async function readPurchaseLedger(
 
 export async function acceptSavingsRule(sub: string, rule: Recommendation) {
   const { error } = await getServerSupabase().rpc(
-    "walletwise_accept_savings_rule",
+    rule.settingsSnapshot
+      ? "walletwise_accept_reviewed_rule"
+      : "walletwise_accept_savings_rule",
     {
       p_auth0_sub: sub,
       p_currency: rule.currency,
@@ -263,6 +265,7 @@ export async function acceptSavingsRule(sub: string, rule: Recommendation) {
       p_cap: rule.cap,
       p_suggested: rule.suggested,
       p_ledger_revision: rule.ledgerRevision,
+      ...(rule.settingsSnapshot ? { p_settings: rule.settingsSnapshot } : {}),
     },
   );
   if (error) throw databaseError(error);

@@ -1,7 +1,12 @@
 import { reportPeriod } from "./report-period.js";
 import { currencies, roundUp, money } from "./money.js";
 import type { UserData, Report, Recommendation } from "./types.js";
-import { balances, emptyBalances, generalSavings, goalSaved } from "./ledger.js";
+import {
+  balances,
+  emptyBalances,
+  generalSavings,
+  goalSaved,
+} from "./ledger.js";
 function add(a: number, b: number): number {
   const result = a + b;
   if (
@@ -173,6 +178,7 @@ export function buildReport(
       };
     }),
   };
+  const available = balances(data);
   const recommendations: Recommendation[] = [];
   for (const s of report.summaries) {
     if (!s.count) continue;
@@ -200,6 +206,11 @@ export function buildReport(
     const additional = estimatedSavings - s.savings;
     if (
       additional > 0 &&
+      available[s.currency] >=
+        Math.max(
+          additional,
+          Math.min(suggested, data.preferences.caps[s.currency]),
+        ) &&
       data.preferences.savings === "enabled" &&
       data.savingsRuleEnabled?.[s.currency] !== false
     )
@@ -207,6 +218,11 @@ export function buildReport(
         id: randomUUID(),
         reportId: report.id,
         cap: data.preferences.caps[s.currency],
+        settingsSnapshot: {
+          increments: { ...data.preferences.increments },
+          caps: { ...data.preferences.caps },
+          destination: data.preferences.savingsDestination ?? null,
+        },
         ledgerRevision:
           data.ledger.filter((e) => e.postings.length > 0).at(-1)?.id ?? "",
         currency: s.currency,

@@ -83,6 +83,19 @@ export function Funding({
     parsed !== null && parsed >= 100 && parsed <= (config?.maxMinor || 0);
   return (
     <>
+      <div className="sandbox-guidance">
+        <strong>PayPal Sandbox - test funds only</strong>
+        <p>
+          Use a Sandbox personal account created in the PayPal Developer
+          Dashboard. A regular PayPal account cannot sign in to Sandbox
+          Checkout. PayPal sign-in and wallet funding are separate operations.
+        </p>
+        <small>
+          Your wallet is credited only after server verification. If checkout is
+          interrupted, check the existing payment status before starting again.
+          No real money is deposited or paid out.
+        </small>
+      </div>
       {error && (
         <p role="alert" className="error">
           {error}

@@ -16,14 +16,31 @@ export function walletFixture(): State {
 }
 // Only Playwright serves this page. The application has no fixture entry point.
 async function installHarness(page: Page, financial = false) {
-  await page.route("**/wallet-test", (route) =>
+  await page.route(/\/wallet-test(?:\?.*)?$/, (route) =>
     route.fulfill({
       contentType: "text/html",
       body: `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="root"></div><script type="module">
  import RefreshRuntime from '/@react-refresh';RefreshRuntime.injectIntoGlobalHook(window);window.$RefreshReg$=()=>{};window.$RefreshSig$=()=>type=>type;window.__vite_plugin_react_preamble_installed__=true;
  const {React,createRoot}=await import('/tests/fixtures/browser.tsx');
  const {setAuth0TokenProvider}=await import('/src/api.ts');setAuth0TokenProvider(async()=>"test-fixture-token");
- ${financial ? `const {createWalletFixture}=await import('/tests/fixtures/wallet-service.ts');const {loadingResponse}=await import('/tests/fixtures/loading.ts');const fixture=createWalletFixture();const original=window.fetch.bind(window);window.fetch=async(url,options={})=>{if(typeof url==='string'&&url.startsWith('/api/')){try{return new Response(JSON.stringify(((url.startsWith('/api/bootstrap')||url.startsWith('/api/dashboard')||url.startsWith('/api/activity'))?loadingResponse(url.slice(4),fixture('/state')):fixture(url.slice(4),options.body?JSON.parse(options.body):undefined,options.method||'GET'))),{headers:{'content-type':'application/json'}});}catch(e){return new Response(JSON.stringify({error:e.message}),{status:400,headers:{'content-type':'application/json'}});}}return original(url,options);};` : ""}
+ ${
+   financial
+     ? `
+ const {createWalletFixture}=await import('/tests/fixtures/wallet-service.ts');
+ const {loadingResponse}=await import('/tests/fixtures/loading.ts');
+ const fixture=createWalletFixture();const original=window.fetch.bind(window);
+ window.fetch=async(url,options={})=>{
+   if(typeof url==='string'&&url.startsWith('/api/')){
+    try {
+     const readProjection=url.startsWith('/api/bootstrap')||url.startsWith('/api/dashboard')||url.startsWith('/api/activity')||url==='/api/savings/coach';
+     const result=readProjection?loadingResponse(url.slice(4),fixture('/state')):fixture(url.slice(4),options.body?JSON.parse(options.body):undefined,options.method||'GET');
+     return new Response(JSON.stringify(result),{headers:{'content-type':'application/json'}});
+    }catch(e){return new Response(JSON.stringify({error:e.message}),{status:400,headers:{'content-type':'application/json'}});}
+   }
+   return original(url,options);
+ };`
+     : ""
+ }
  const {App}=await import('/src/App.tsx');await import('/src/styles.css');createRoot(document.getElementById('root')).render(React.createElement(App));
  </script></body></html>`,
     }),

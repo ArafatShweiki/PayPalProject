@@ -9,6 +9,7 @@ import {
   fireEvent,
   waitFor,
   act,
+  within,
 } from "@testing-library/react";
 import { App } from "../src/App";
 import { ReportSummary } from "../src/ReportSummary";
@@ -165,6 +166,7 @@ it("refreshes after explicit recommendation acceptance and dismissal without cha
     />,
   );
   fireEvent.click(screen.getByRole("button", { name: "Accept rule" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm rule change" }));
   await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
   fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
   await waitFor(() => expect(refresh).toHaveBeenCalledTimes(2));
@@ -177,4 +179,60 @@ it("refreshes after explicit recommendation acceptance and dismissal without cha
     { decision: "dismissed" },
   );
   expect(state.preferences.increments.ILS).toBe(before);
+});
+it("keeps currency comparisons separate, handles zero baselines and preserves the saved timestamp", () => {
+  const state = fixture();
+  state.createdAt = "2026-01-01T00:00:00Z";
+  purchase(state, "ILS", 5000, "Prior purchase", "Other").at =
+    "2026-08-12T12:00:00Z";
+  purchase(state, "ILS", 3000, "Current purchase", "Other").at =
+    "2026-09-12T12:00:00Z";
+  purchase(state, "USD", 1200, "Current purchase", "Other").at =
+    "2026-09-12T12:00:00Z";
+  const report = buildReport(
+    state,
+    "monthly",
+    Date.parse("2026-10-15T12:34:00Z"),
+    "2026-09-15",
+    "Asia/Hebron",
+  ).report;
+  const { container } = render(
+    <ReportSummary
+      state={state}
+      report={report}
+      busy={false}
+      run={async () => true}
+    />,
+  );
+  expect(screen.getByText(/20\.00 decrease/)).toBeTruthy();
+  expect(screen.getByText("40.0% lower")).toBeTruthy();
+  expect(screen.getByText(/12\.00 increase/)).toBeTruthy();
+  expect(screen.getByText(/zero baseline/)).toBeTruthy();
+  expect(screen.getByText("No change")).toBeTruthy();
+  expect(container.querySelector("time")?.dateTime).toBe(report.at);
+  expect(container.querySelector(".report-details")?.hasAttribute("open")).toBe(
+    false,
+  );
+  expect(screen.getByText(/Refund-adjusted spending/)).toBeTruthy();
+});
+
+it("shows an informational state for each currency without valid comparison history", () => {
+  const state = fixture();
+  const report = buildReport(state, "monthly").report;
+  render(
+    <ReportSummary
+      state={state}
+      report={report}
+      busy={false}
+      run={async () => true}
+    />,
+  );
+  expect(
+    within(
+      screen.getByRole("region", { name: "Spending insights" }),
+    ).getAllByText(
+      "Not enough recorded history for a previous-period comparison.",
+    ),
+  ).toHaveLength(3);
+  expect(screen.queryByText(/% higher|% lower/)).toBeNull();
 });

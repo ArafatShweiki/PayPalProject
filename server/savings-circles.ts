@@ -390,3 +390,28 @@ circlesRouter.post("/circles/:id/actions", async (req, res) => {
     }),
   );
 });
+
+export type TimelineEvent = {
+  id: string;
+  at: string;
+  memberId: string | null;
+  event: string;
+  details: Record<string, unknown>;
+};
+circlesRouter.get("/circles/:id/timeline", async (req, res) => {
+  const query = z
+    .object({
+      before: z.iso.datetime({ offset: true }).optional(),
+      id: z.uuid().optional(),
+    })
+    .parse(req.query);
+  if (!!query.before !== !!query.id)
+    throw new DatabaseError("Reload Circle activity.", 400);
+  const rows = await savingsRpc<TimelineEvent[]>("walletwise_circle_timeline", {
+    p_sub: res.locals.sub,
+    p_id: key.parse(req.params.id),
+    p_before: query.before ?? null,
+    p_before_id: query.id ?? null,
+  });
+  res.json({ events: rows.slice(0, 25), more: rows.length > 25 });
+});

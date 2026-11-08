@@ -149,3 +149,5 @@ test-results-production/
 
 # Local Vercel linkage and build output may contain downloaded environment values.
 .vercel/
+playwright-report-live/
+test-results-live/

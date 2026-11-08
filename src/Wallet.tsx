@@ -1,3 +1,4 @@
+import { DatePicker } from "./DatePicker";
 import { DeferredSection } from "./DeferredSection";
 import { snapshotRate } from "../shared/market";
 import { useEffect, useRef, useState } from "react";
@@ -213,28 +214,22 @@ export function Activity({
             ))}
           </select>
         </label>
-        <label>
-          From
-          <input
-            type="date"
-            value={from}
-            onChange={(e) => {
-              setFrom(e.target.value);
-              onFilter?.(currency, category, e.target.value, to);
-            }}
-          />
-        </label>
-        <label>
-          To
-          <input
-            type="date"
-            value={to}
-            onChange={(e) => {
-              setTo(e.target.value);
-              onFilter?.(currency, category, from, e.target.value);
-            }}
-          />
-        </label>
+        <DatePicker
+          label="From"
+          value={from}
+          onChange={(value) => {
+            setFrom(value);
+            onFilter?.(currency, category, value, to);
+          }}
+        />
+        <DatePicker
+          label="To"
+          value={to}
+          onChange={(value) => {
+            setTo(value);
+            onFilter?.(currency, category, from, value);
+          }}
+        />
       </div>
       <DeferredSection
         label="wallet activity"
@@ -365,16 +360,14 @@ export function TransactionDetails({
         )}
         <dt>Round-up</dt>
         <dd>{money(e.saved, e.currency)}</dd>
-        {e.saved > 0 && (
+        {e.saved > 0 && (e.goalId || e.circleId) && (
           <>
             <dt>Savings destination</dt>
             <dd>
               {e.goalId
                 ? (goals.find((g) => g.id === e.goalId)?.name ??
                   "Previous savings goal")
-                : e.circleId
-                  ? "Savings Circle"
-                  : "Historical unassigned savings"}
+                : "Savings Circle"}
             </dd>
           </>
         )}

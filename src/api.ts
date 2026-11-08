@@ -185,7 +185,14 @@ export async function api<T>(
       request,
       options.signal,
     );
-  // Never cache or retry writes. Invalidate reads on either side of every mutation.
+  // These exact routes change only discovery state or request read-only analysis.
+  // They must not cancel a concurrent navigation's financial reads.
+  if (
+    (path === "/guide" && method === "PUT") ||
+    path === "/savings/coach/explain"
+  )
+    return request(new AbortController().signal);
+  // Never cache or retry financial writes. Invalidate on either side of every mutation.
   privateRequests.clear();
   try {
     return await request(new AbortController().signal);

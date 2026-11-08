@@ -181,6 +181,7 @@ it("keeps report currencies separate, omits missing comparisons and wires explic
   ).toBe("2340");
   expect(screen.getByText("Current rule")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Accept rule" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm rule change" }));
   expect(api).toHaveBeenCalledWith(
     `/recommendations/${state.recommendations[0].id}`,
     { decision: "accepted" },

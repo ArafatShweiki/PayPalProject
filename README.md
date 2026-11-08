@@ -92,3 +92,10 @@ See [VERCEL_DEPLOYMENT.md](VERCEL_DEPLOYMENT.md) for this repository's deploymen
 ## Supabase-only shared storage
 
 Firebase Admin/Firestore is removed. Apply `202611060001_backend_storage.sql` after the existing migrations before deployment. Use [SUPABASE_ONLY_MIGRATION.md](SUPABASE_ONLY_MIGRATION.md) for the storage inventory, preserved local data, dry-run imports, security design and rollback, and [SUPABASE_ONLY_VALIDATION.md](SUPABASE_ONLY_VALIDATION.md) for actual verification. Run `npm run test:postgres` for real PostgreSQL concurrency tests with independent connections; no hosted credentials are used.
+
+
+## Product enhancements (2026-11-06)
+
+The savings outlook, optional first-use guide, Circle timeline/milestones and reviewed recommendation validation require `202611060002_product_enhancements.sql` after all preceding migrations, including `202611060001_backend_storage.sql`. Validate in an isolated Preview project before manually applying to the intended hosted project. No hosted migration or deployment was executed by this change. No new environment variable is required.
+
+See [the product enhancement report](PRODUCT_ENHANCEMENT_REPORT.md), [executed enhancement tests](ENHANCEMENT_TEST_REPORT.md) and [the Sandbox demo guide](HACKATHON_DEMO_GUIDE.md) for architecture, verification and external-provider limitations.

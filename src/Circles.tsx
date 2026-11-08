@@ -1,3 +1,4 @@
+import { CircleTimeline } from "./CircleTimeline";
 import { useEffect, useRef, useState } from "react";
 import {
   Users,
@@ -45,9 +46,11 @@ const percent = (value: string, total: string) =>
 export function Invitation({
   authenticated = false,
   onJoined,
+  onDismiss,
 }: {
   authenticated?: boolean;
   onJoined?: () => void;
+  onDismiss?: () => void;
 }) {
   const token = location.pathname.split("/").at(-1) || "";
   const [preview, setPreview] = useState<CircleInvitation>(),
@@ -125,30 +128,44 @@ export function Invitation({
               </Button>
             </>
           ) : authenticated ? (
-            <Button
-              disabled={busy}
-              onClick={() => {
-                setBusy(true);
-                void api("/circles/join", { token, requestId: key.current })
-                  .then((result: unknown) => {
-                    const joined = result as {
-                      id: string;
-                      alreadyMember?: boolean;
-                    };
-                    if (joined.alreadyMember) {
-                      setPreview({
-                        ...preview,
-                        alreadyMember: true,
-                        circleId: joined.id,
-                      });
-                    } else openCircle(joined.id);
-                  })
-                  .catch((e) => setError(e.message))
-                  .finally(() => setBusy(false));
-              }}
-            >
-              Join Circle
-            </Button>
+            <div className="actions">
+              <Button
+                disabled={busy}
+                onClick={() => {
+                  setBusy(true);
+                  void api("/circles/join", { token, requestId: key.current })
+                    .then((result: unknown) => {
+                      const joined = result as {
+                        id: string;
+                        alreadyMember?: boolean;
+                      };
+                      if (joined.alreadyMember) {
+                        setPreview({
+                          ...preview,
+                          alreadyMember: true,
+                          circleId: joined.id,
+                        });
+                      } else openCircle(joined.id);
+                    })
+                    .catch((e) => setError(e.message))
+                    .finally(() => setBusy(false));
+                }}
+              >
+                Join Circle
+              </Button>
+              <Button
+                secondary
+                disabled={busy}
+                onClick={() => {
+                  sessionStorage.removeItem("walletwise:circle-invite");
+                  history.replaceState({}, "", "/#Home");
+                  window.dispatchEvent(new HashChangeEvent("hashchange"));
+                  onDismiss?.();
+                }}
+              >
+                Not Now
+              </Button>
+            </div>
           ) : (
             <p>
               Sign in or register below, then confirm that you want to join.
@@ -188,6 +205,8 @@ export function Circles({
     [proposalKind, setProposalKind] =
       useState<CircleProposal["kind"]>("withdraw"),
     [returnMember, setReturnMember] = useState("");
+  const [approveId, setApproveId] = useState<string>();
+  const working = useRef(false);
   const formKey = useRef(crypto.randomUUID());
   const loadRequest = useRef<AbortController | undefined>(undefined);
   async function load() {
@@ -225,6 +244,8 @@ export function Circles({
     return () => loadRequest.current?.abort();
   }, [selected]);
   async function work(fn: () => Promise<unknown>, close = false) {
+    if (working.current) return false;
+    working.current = true;
     setBusy(true);
     setError("");
     try {
@@ -238,6 +259,7 @@ export function Circles({
       setError((e as Error).message);
       return false;
     } finally {
+      working.current = false;
       setBusy(false);
     }
   }
@@ -411,7 +433,20 @@ export function Circles({
                 {!detail.archived && (
                   <>
                     <Button
-                      disabled={busy || detail.reached}
+                      disabled={
+                        busy ||
+                        detail.reached ||
+                        detail.proposals.some(
+                          (p) =>
+                            [
+                              "Pending",
+                              "Approved",
+                              "Executing",
+                              "Failed",
+                            ].includes(p.status) &&
+                            Date.parse(p.expiresAt) > Date.now(),
+                        )
+                      }
                       onClick={() => open("contribute")}
                     >
                       Contribute
@@ -500,6 +535,10 @@ export function Circles({
                   </>
                 )}
               </div>
+              <p>
+                Contributions pause while an active request locks the Circle.
+                Every required contributor must approve the exact terms.
+              </p>
               <p className="footnote">
                 Simulated wallet balances. No pooled PayPal account or live
                 payout.
@@ -510,11 +549,52 @@ export function Circles({
                 title="Member contributions"
                 subtitle="Outstanding shares in the locked circle balance."
               />
+              <div
+                className="contribution-stack"
+                role="img"
+                aria-label="Member shares; exact amounts and percentages follow"
+              >
+                {detail.members.map(
+                  (m, i) =>
+                    Number(m.share) > 0 && (
+                      <span
+                        key={m.id}
+                        style={{
+                          width: `${percent(m.share, detail.balance)}%`,
+                          background: [
+                            "#287963",
+                            "#296ca4",
+                            "#9a6634",
+                            "#53668e",
+                            "#536c70",
+                          ][i % 5],
+                        }}
+                      />
+                    ),
+                )}
+              </div>
+              <p>
+                {detail.members.filter((m) => m.active).length} active members -{" "}
+                {detail.proposals.filter((p) => p.status === "Pending").length}{" "}
+                pending votes
+              </p>
               <div className="circle-members">
-                {detail.members.map((m) => (
+                {detail.members.map((m, i) => (
                   <div className="circle-member" key={m.id}>
                     <span>
                       <strong>
+                        <span
+                          className="member-swatch"
+                          style={{
+                            background: [
+                              "#287963",
+                              "#296ca4",
+                              "#9a6634",
+                              "#53668e",
+                              "#536c70",
+                            ][i % 5],
+                          }}
+                        />{" "}
                         {m.name}
                         {m.you ? " (You)" : ""}
                       </strong>
@@ -535,6 +615,23 @@ export function Circles({
                       value={Number(m.share)}
                       max={Math.max(1, Number(detail.balance))}
                     />
+                    <details className="member-history">
+                      <summary>Recent contribution history</summary>
+                      <ul>
+                        {detail.entries
+                          .filter((e) => e.memberId === m.id)
+                          .map((e) => (
+                            <li key={e.id}>
+                              {e.kind}: {amount(e.amount, detail.currency)} -{" "}
+                              {new Date(e.at).toLocaleString()}
+                            </li>
+                          ))}
+                      </ul>
+                      <small>
+                        The latest recorded entries are shown here. Load the
+                        Circle activity timeline for older records.
+                      </small>
+                    </details>
                   </div>
                 ))}
               </div>
@@ -577,6 +674,18 @@ export function Circles({
                       <dd>{amount(p.fee, p.currency)}</dd>
                       <dt>Remaining</dt>
                       <dd>{amount(p.remaining, p.currency)}</dd>
+                      <dt>Created</dt>
+                      <dd>
+                        {p.createdAt
+                          ? new Date(p.createdAt).toLocaleString()
+                          : "Not recorded"}
+                      </dd>
+                      <dt>Requested by</dt>
+                      <dd>
+                        {p.creatorId
+                          ? memberName(p.creatorId)
+                          : "Not recorded in this historical request"}
+                      </dd>
                       <dt>Expires</dt>
                       <dd>{new Date(p.expiresAt).toLocaleString()}</dd>
                     </dl>
@@ -603,37 +712,33 @@ export function Circles({
                     </ul>
                     {p.error && <p role="alert">{p.error}</p>}
                     <div className="actions">
-                      {p.status === "Pending" && own && !own.decision && (
-                        <>
-                          <Button
-                            disabled={busy}
-                            onClick={() =>
-                              void work(() =>
-                                action("vote", {
-                                  proposalId: p.id,
-                                  decision: "Approve",
-                                }),
-                              )
-                            }
-                          >
-                            Approve
-                          </Button>
-                          <Button
-                            secondary
-                            disabled={busy}
-                            onClick={() =>
-                              void work(() =>
-                                action("vote", {
-                                  proposalId: p.id,
-                                  decision: "Reject",
-                                }),
-                              )
-                            }
-                          >
-                            Reject
-                          </Button>
-                        </>
-                      )}
+                      {p.status === "Pending" &&
+                        Date.parse(p.expiresAt) > Date.now() &&
+                        own &&
+                        !own.decision && (
+                          <>
+                            <Button
+                              disabled={busy}
+                              onClick={() => setApproveId(p.id)}
+                            >
+                              Approve
+                            </Button>
+                            <Button
+                              secondary
+                              disabled={busy}
+                              onClick={() =>
+                                void work(() =>
+                                  action("vote", {
+                                    proposalId: p.id,
+                                    decision: "Reject",
+                                  }),
+                                )
+                              }
+                            >
+                              Reject
+                            </Button>
+                          </>
+                        )}
                       {detail.owner &&
                         ["Approved", "Failed"].includes(p.status) && (
                           <Button
@@ -670,47 +775,77 @@ export function Circles({
                 );
               })}
             </section>
-            <section className="panel">
-              <PanelHead
-                title="Circle activity"
-                subtitle="Contribution and request history."
-              />
-              {!detail.entries.length && <p>No contributions yet.</p>}
-              {detail.entries.map((e) => (
-                <div className="alert-row" key={e.id}>
-                  <span>
-                    <strong>{memberName(e.memberId)}</strong>
-                    <small>
-                      {e.kind} · {new Date(e.at).toLocaleString()}
-                    </small>
-                  </span>
-                  <strong>{amount(e.amount, detail.currency)}</strong>
-                </div>
-              ))}
-              {detail.activity.map((e, i) => (
-                <div className="alert-row" key={`${e.at}-${i}`}>
-                  <span>
-                    {memberName(e.memberId)} · {e.event.replaceAll("_", " ")}
-                  </span>
-                  {e.event === "request_return" && detail.owner && (
-                    <Button
-                      secondary
-                      disabled={busy}
-                      onClick={() => {
-                        setProposalKind("return_member");
-                        setReturnMember(e.memberId);
-                        open("propose");
-                      }}
-                    >
-                      Propose contributor return
-                    </Button>
-                  )}
-                </div>
-              ))}
-            </section>
+            <CircleTimeline
+              circle={detail}
+              busy={busy}
+              onReturn={(id) => {
+                setProposalKind("return_member");
+                setReturnMember(id);
+                open("propose");
+              }}
+            />
           </>
         )
       )}
+      {approveId &&
+        detail &&
+        (() => {
+          const p = detail.proposals.find((p) => p.id === approveId);
+          return p ? (
+            <Modal
+              title="Confirm Circle approval"
+              onClose={() => {
+                if (!busy) setApproveId(undefined);
+              }}
+              error={error}
+            >
+              <p>
+                Approve {p.kind.replaceAll("_", " ")} for{" "}
+                {amount(p.amount, p.currency)}?
+              </p>
+              <p>
+                Destination:{" "}
+                {p.kind === "return_all"
+                  ? "Original contributors"
+                  : p.kind === "target"
+                    ? "Circle target"
+                    : memberName(p.destination)}
+                . Fees: {amount(p.fee, p.currency)}.
+              </p>
+              <p>{p.reason}</p>
+              <p>
+                Your approval applies to these fixed terms. Funds remain locked
+                until every required contributor approves and the owner executes
+                the request.
+              </p>
+              <div className="actions">
+                <Button
+                  secondary
+                  disabled={busy}
+                  onClick={() => setApproveId(undefined)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  disabled={
+                    busy ||
+                    p.status !== "Pending" ||
+                    Date.parse(p.expiresAt) <= Date.now()
+                  }
+                  onClick={() =>
+                    void work(() =>
+                      action("vote", { proposalId: p.id, decision: "Approve" }),
+                    ).then((ok) => {
+                      if (ok) setApproveId(undefined);
+                    })
+                  }
+                >
+                  Confirm approval
+                </Button>
+              </div>
+            </Modal>
+          ) : null;
+        })()}
       {modal && (
         <Modal
           title={

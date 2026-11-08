@@ -42,6 +42,22 @@ test("activate once, create a goal, purchase, report, approve a rule, refund, an
     page.getByRole("button", { name: "Accept rule" }).first(),
   ).toBeVisible();
   await page.getByRole("button", { name: "Accept rule" }).first().click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  expect(
+    await page
+      .getByRole("dialog")
+      .evaluate((el) => el.contains(document.activeElement)),
+  ).toBe(true);
+  await page
+    .getByRole("dialog")
+    .screenshot({ path: "test-results/enhancement-rule-confirmation.png" });
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("button", { name: "Accept rule" }).first().click();
+  await page
+    .getByRole("button", { name: "Confirm rule change", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(page.locator('input[name="increment-ILS"]')).toHaveValue(
     "10.00",

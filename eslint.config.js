@@ -8,12 +8,19 @@ export default ts.config(
       "node_modules/**",
       "playwright-report/**",
       "test-results/**",
+      "test-results-live/**",
+      "playwright-report-live/**",
       ".temp/**",
       ".vercel/**",
     ],
   },
   js.configs.recommended,
   ...ts.configs.recommended,
+  {
+    files: ["tests/live/**/*.ts"],
+    // Playwright requires destructured fixture parameters, including empty ones.
+    rules: { "no-empty-pattern": ["error", { allowObjectPatternsAsParameters: true }] },
+  },
   {
     files: ["**/*.{ts,tsx,js,mjs}"],
     languageOptions: { globals: { ...globals.node, ...globals.browser } },

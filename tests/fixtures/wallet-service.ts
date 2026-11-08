@@ -273,6 +273,10 @@ export function createWalletFixture() {
     reconciliationRequired: false,
   });
   function handle(path: string, body: unknown, method: string) {
+    if (path === "/guide") {
+      data.guide = { ...data.guide, ...(body as object) };
+      return data.guide;
+    }
     if (path === "/savings/options") return options();
     if (path === "/savings/destination") {
       const b = z
@@ -493,10 +497,34 @@ export function createWalletFixture() {
     if (path.startsWith("/goals/") && method === "DELETE") {
       const goal = data.goals.find((g) => g.id === path.slice(7));
       if (!goal) throw new Error("Select an owned goal.");
-      goal.archived = true;
+      const saved = goalSaved(data, goal.id);
+      if (saved > 0)
+        append(data, {
+          id: crypto.randomUUID(),
+          at: new Date().toISOString(),
+          kind: "adjustment",
+          currency: goal.currency,
+          amount: saved,
+          saved: 0,
+          goalId: goal.id,
+          description: `Deleted goal: ${goal.name}`,
+          category: "Savings",
+          postings: [
+            { currency: goal.currency, account: "savings", amount: -saved },
+            { currency: goal.currency, account: "available", amount: saved },
+          ],
+        });
+      data.goals = data.goals.filter((g) => g.id !== goal.id);
       if (data.preferences.goalIds[goal.currency] === goal.id)
         delete data.preferences.goalIds[goal.currency];
-      return { archived: true };
+      if (
+        data.preferences.savingsDestination?.kind === "goal" &&
+        data.preferences.savingsDestination.id === goal.id
+      ) {
+        data.preferences.savingsDestination = null;
+        data.preferences.savings = "disabled";
+      }
+      return { deleted: true };
     }
     if (path === "/goals" && method === "POST") {
       const b = z

@@ -80,3 +80,27 @@ it("retries only a failed read and classifies service failures safely", async ()
   await expect(api("/purchases", {})).rejects.toMatchObject({ status: 503 });
   expect(fetcher).toHaveBeenCalledTimes(1);
 });
+
+it("guide persistence does not abort in-flight Circle navigation reads", async () => {
+  let resolve!: (r: Response) => void;
+  let readSignal: AbortSignal | undefined;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: string, options: RequestInit) => {
+      if (url === "/api/circles") {
+        readSignal = options.signal as AbortSignal;
+        return new Promise<Response>((r) => {
+          resolve = r;
+        });
+      }
+      return Promise.resolve(json({ dismissed: true }));
+    }),
+  );
+  setAuth0TokenProvider(async () => "alice");
+  const pending = api("/circles", undefined, "GET");
+  await vi.waitFor(() => expect(resolve).toBeTypeOf("function"));
+  await api("/guide", { walletViewed: true }, "PUT");
+  expect(readSignal?.aborted).toBe(false);
+  resolve(json([{ id: "circle" }]));
+  expect(await pending).toEqual([{ id: "circle" }]);
+});

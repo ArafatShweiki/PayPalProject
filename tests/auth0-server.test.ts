@@ -189,6 +189,20 @@ it("rejects expired, wrong audience, wrong issuer, wrong client and unsigned tok
     await expect(verify(await token(values))).rejects.toThrow();
   await expect(verify("not.a.token")).rejects.toThrow();
 });
+it("returns strict 401 JSON for malformed, unsigned and expired tokens at the backend", async () => {
+  for (const bearer of [
+    "live-smoke-invalid",
+    "eyJhbGciOiJub25lIn0.eyJleHAiOjF9.",
+    await token({ exp: 1 }),
+  ]) {
+    const response = await fetch(base + "/api/state", {
+      headers: { Authorization: `Bearer ${bearer}` },
+    });
+    expect(response.status).toBe(401);
+    expect(response.headers.get("content-type")).toContain("application/json");
+    expect(await response.json()).toHaveProperty("error");
+  }
+});
 
 const profile = {
   fullName: "Taylor Example",

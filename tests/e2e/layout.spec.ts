@@ -26,7 +26,7 @@ test("all seven pages render at desktop, laptop, tablet and mobile widths", asyn
         .click();
       await expect(page.locator("main h1")).toBeVisible();
       await expect(page.locator("body")).not.toContainText(
-        /Auth0|Supabase|Firebase|Firestore|\bSandbox\b|schema-validated/i,
+        /Auth0|Supabase|Firebase|Firestore|schema-validated/i,
       );
       expect(
         await page.evaluate(
@@ -34,7 +34,7 @@ test("all seven pages render at desktop, laptop, tablet and mobile widths", asyn
         ),
         `${name} fits ${width}px`,
       ).toBe(true);
-      if (name === "Home" || name === "Smart Savings")
+      if (name === "Home" || name === "Smart Savings" || name === "My Wallet")
         await page.screenshot({
           path: `test-results/${name.replaceAll(" ", "-")}-${width}.png`,
           fullPage: true,

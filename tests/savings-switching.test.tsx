@@ -52,11 +52,15 @@ it("keeps personal goals and Circles available and submits a replacement once", 
     );
   const done = vi.fn();
   render(<SavingsSetup onDone={done} />);
-  const select = await screen.findByLabelText("Default savings destination");
+  const choice = await screen.findByRole("radio", { name: "New Laptop USD" });
   expect(
-    screen.getAllByRole("group").map((g) => g.getAttribute("label")),
-  ).toEqual(["Personal savings goals", "Savings Circles"]);
-  fireEvent.change(select, { target: { value: `goal:${personal.id}` } });
+    screen.getByRole("region", { name: "Personal savings goals" }),
+  ).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Savings Circles" })).toBeTruthy();
+  expect(
+    screen.getByRole("radio", { name: "Family Vacation JOD" }),
+  ).toHaveProperty("checked", true);
+  fireEvent.click(choice);
   const save = screen.getByRole("button", { name: "Use this goal" });
   fireEvent.click(save);
   fireEvent.click(save);
@@ -80,10 +84,7 @@ it("keeps the previous confirmed destination when saving fails", async () => {
     .mockRejectedValueOnce(new Error("Unable to save. Please try again."));
   const done = vi.fn();
   render(<SavingsSetup onDone={done} />);
-  fireEvent.change(
-    await screen.findByLabelText("Default savings destination"),
-    { target: { value: `goal:${personal.id}` } },
-  );
+  fireEvent.click(await screen.findByRole("radio", { name: "New Laptop USD" }));
   fireEvent.click(screen.getByRole("button", { name: "Use this goal" }));
   expect((await screen.findByRole("alert")).textContent).toContain(
     "Unable to save",
@@ -128,9 +129,9 @@ it("does not retain an ineligible Circle as a selectable default", async () => {
   choices.options = choices.options.filter((o) => o.kind === "goal");
   vi.mocked(api).mockResolvedValueOnce(choices);
   render(<SavingsSetup onDone={() => {}} />);
-  const select = await screen.findByLabelText("Default savings destination");
-  expect(select).toHaveProperty("value", "");
-  expect(screen.queryByRole("option", { name: /Family Vacation/ })).toBeNull();
+  const choice = await screen.findByRole("radio", { name: "New Laptop USD" });
+  expect(choice).toHaveProperty("checked", false);
+  expect(screen.queryByRole("radio", { name: /Family Vacation/ })).toBeNull();
   expect(screen.getByRole("button", { name: "Use this goal" })).toHaveProperty(
     "disabled",
     true,
@@ -140,5 +141,7 @@ it("offers explicit goal creation when there are no eligible destinations", asyn
   vi.mocked(api).mockResolvedValueOnce({ ...options(), options: [] });
   render(<SavingsSetup onDone={() => {}} />);
   await waitFor(() => expect(screen.getByLabelText("Goal name")).toBeTruthy());
-  expect(screen.queryByLabelText("Default savings destination")).toBeNull();
+  expect(
+    screen.queryByRole("group", { name: "Default savings destination" }),
+  ).toBeNull();
 });

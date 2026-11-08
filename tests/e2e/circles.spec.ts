@@ -107,10 +107,20 @@ test("switches a single persisted default between personal goals and Circles wit
     } else {
       await page.getByRole("button", { name: "Choose savings goal" }).click();
       const modal = page.getByRole("dialog");
-      await expect(modal.getByRole("option")).toHaveCount(5);
-      await modal
-        .getByLabel("Default savings destination")
-        .selectOption(`${kind}:${id}`);
+      await expect(modal.getByRole("radio")).toHaveCount(4);
+      await modal.locator(`input[type="radio"][value="${kind}:${id}"]`).check();
+      if (id === c2.id) {
+        for (const width of [1440, 375]) {
+          await page.setViewportSize({ width, height: 900 });
+          await modal.screenshot({
+            path: `test-results/savings-destination-${width}.png`,
+          });
+          expect(
+            await modal.evaluate((el) => el.scrollWidth <= el.clientWidth),
+          ).toBe(true);
+        }
+        await page.setViewportSize({ width: 1440, height: 900 });
+      }
       await modal.getByRole("button", { name: "Use this goal" }).click();
       await expect(modal).toHaveCount(0);
     }
@@ -135,9 +145,7 @@ test("switches a single persisted default between personal goals and Circles wit
   );
   await page.getByRole("button", { name: "Choose savings goal" }).click();
   const modal = page.getByRole("dialog");
-  await modal
-    .getByLabel("Default savings destination")
-    .selectOption(`circle:${c2.id}`);
+  await modal.locator(`input[type="radio"][value="circle:${c2.id}"]`).check();
   await modal.getByRole("button", { name: "Use this goal" }).click();
   await expect(modal.getByRole("alert")).toContainText(
     "Unable to save destination",
@@ -333,14 +341,27 @@ test("goal setup, ILS to USD saving, direct invitation, two-member voting and lo
     .click();
   await expect(request).toHaveCount(0);
   await page.getByRole("button", { name: "Approve", exact: true }).click();
+  await page
+    .getByRole("dialog")
+    .screenshot({ path: "test-results/enhancement-circle-confirmation.png" });
+  await page
+    .getByRole("button", { name: "Confirm approval", exact: true })
+    .click();
   await expect(
     page.getByText("Request locked — 1 of 2 approvals"),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Execute approved request" }),
   ).toHaveCount(0);
+  await page.screenshot({
+    path: "test-results/enhancement-circle-pending.png",
+    fullPage: true,
+  });
   await member.getByRole("button", { name: "Refresh Circle" }).click();
   await member.getByRole("button", { name: "Approve", exact: true }).click();
+  await member
+    .getByRole("button", { name: "Confirm approval", exact: true })
+    .click();
   await page.getByRole("button", { name: "Refresh Circle" }).click();
   await page.getByRole("button", { name: "Execute approved request" }).click();
   await expect(
@@ -355,7 +376,7 @@ test("goal setup, ILS to USD saving, direct invitation, two-member voting and lo
   }>("walletwise_circles", [alice, circles[0].id]);
   expect(result.balance).toBe("314");
   expect(result.members.reduce((s, m) => s + Number(m.share), 0)).toBe(314);
-  for (const width of [1440, 820, 390]) {
+  for (const width of [1440, 1024, 768, 375]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.evaluate(() => window.scrollTo(0, 0));
     expect(
@@ -370,4 +391,58 @@ test("goal setup, ILS to USD saving, direct invitation, two-member voting and lo
     });
   }
   await context.close();
+});
+
+test("deleting a personal goal confirms and returns its savings to the matching wallet", async ({
+  page,
+}) => {
+  const sub = await ledger.account("Delete personal goal");
+  const g = await ledger.rpc<{ id: string }>("walletwise_create_savings_goal", [
+    sub,
+    sub,
+    randomUUID(),
+    "goal",
+    JSON.stringify({
+      name: "Laptop to delete",
+      currency: "JOD",
+      target: 10000,
+    }),
+    true,
+  ]);
+  await ledger.rpc("walletwise_apply_transaction", [
+    sub,
+    randomUUID(),
+    "save",
+    "adjustment",
+    "Save",
+    "Savings",
+    JSON.stringify([
+      { currency: "JOD", account: "available", amount_minor: -1234 },
+      { currency: "JOD", account: "savings", amount_minor: 1234 },
+    ]),
+    JSON.stringify({ goalId: g.id }),
+  ]);
+  ledger.states.set(sub, await ledger.read(sub));
+  await mount(page, sub);
+  await page.getByText("Goal options", { exact: true }).click();
+  await expect(page.getByRole("button", { name: "Archive goal" })).toHaveCount(
+    0,
+  );
+  await page.getByRole("button", { name: "Delete goal", exact: true }).click();
+  const modal = page.getByRole("dialog");
+  await expect(modal).toContainText("main JOD wallet");
+  await modal.getByRole("button", { name: "Cancel", exact: true }).click();
+  expect((await ledger.read(sub)).goals).toHaveLength(1);
+  await page.getByRole("button", { name: "Delete goal", exact: true }).click();
+  await modal.screenshot({ path: "test-results/delete-goal-confirmation.png" });
+  await modal
+    .getByRole("button", { name: "Delete goal and return funds" })
+    .click();
+  await expect(modal).toHaveCount(0);
+  await expect(page.locator(".carousel-goal")).toHaveCount(0);
+  const after = await ledger.read(sub);
+  expect(after.balances.JOD).toBe(100000);
+  expect(after.savingsBalances.JOD).toBe(0);
+  await page.reload();
+  await expect(page.locator(".carousel-goal")).toHaveCount(0);
 });

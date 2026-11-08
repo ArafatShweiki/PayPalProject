@@ -4,7 +4,12 @@ import { getServerSupabase, type StoredTransaction } from "./supabase.js";
 import { mapTransaction } from "./database-state.js";
 import { userRead } from "./store.js";
 import { databaseError } from "./database-errors.js";
-import type { ActivityPage, FundingOrder, State, Entry } from "../shared/types.js";
+import type {
+  ActivityPage,
+  FundingOrder,
+  State,
+  Entry,
+} from "../shared/types.js";
 import { timed } from "./diagnostics.js";
 const router = Router();
 router.get("/dashboard", async (req, res) => {
@@ -56,8 +61,11 @@ router.get("/dashboard", async (req, res) => {
       throw new Error("Account totals are unavailable.");
     return n;
   };
-  for (const row of data.dashboard?.dailySpending || [])
+  for (const row of data.dashboard?.dailySpending || []) {
     row.amount = safe(row.amount);
+    if (row.gross !== undefined) row.gross = safe(row.gross);
+    if (row.refunds !== undefined) row.refunds = safe(row.refunds);
+  }
   for (const [id, value] of Object.entries(data.dashboard?.goalTotals || {}))
     data.dashboard!.goalTotals[id] = safe(value);
   if (data.dashboard.generalSavings)
