@@ -2,14 +2,12 @@ import { useEffect, useState, useRef } from "react";
 import { Bell, ArrowUpRight, ArrowDownRight, ArrowRight } from "lucide-react";
 import type { ComparisonPeriod } from "../shared/currency-insights";
 import { api } from "./api";
-import { currencies, money, crossRate, type Currency } from "../shared/money";
+import { currencies, money, type Currency } from "../shared/money";
 import type { State, CurrencyInsight as Insight } from "../shared/types";
 import {
   Button,
-  Empty,
   CurrencySelect,
   PanelHead,
-  date,
   time,
   field,
   type Runner,
@@ -261,82 +259,6 @@ function PerspectiveResult({
           i.observations.map((text, n) => <p key={n}>{text}</p>)}
       </details>
     </div>
-  );
-}
-export function RateHistory({ state }: { state: State }) {
-  const [from, setFrom] = useState<Currency>("USD");
-  const [to, setTo] = useState<Currency>("ILS");
-  const values = state.snapshots.map(
-    (s) => crossRate(from, to, s.ils) / 1000000,
-  );
-  const min = Math.min(...values),
-    max = Math.max(...values);
-  const points = values
-    .map(
-      (v, i) =>
-        `${20 + (i / (values.length - 1)) * 660},${145 - ((v - min) / (max - min || 1)) * 110}`,
-    )
-    .join(" ");
-  return (
-    <section className="panel">
-      <PanelHead
-        title="The story so far"
-        subtitle="Only observations actually retrieved and stored by Dream Piggy Bank."
-        action={
-          <div className="row">
-            <CurrencySelect
-              name="Chart source"
-              value={from}
-              onChange={setFrom}
-            />
-            <CurrencySelect name="Chart target" value={to} onChange={setTo} />
-          </div>
-        }
-      />
-      {values.length < 2 ? (
-        <Empty>
-          Your first observation is a starting point. A chart appears after the
-          next scheduled observation.
-        </Empty>
-      ) : (
-        <>
-          <svg
-            className="chart"
-            viewBox="0 0 700 180"
-            role="img"
-            aria-label={`${from}/${to} stored rate history, minimum ${min}, maximum ${max}`}
-          >
-            <line x1="20" x2="680" y1="145" y2="145" stroke="#dce3eb" />
-            <polyline
-              points={points}
-              fill="none"
-              stroke="#2662a8"
-              strokeWidth="3"
-            />
-            {values.map((v, i) => (
-              <circle
-                key={i}
-                cx={20 + (i / (values.length - 1)) * 660}
-                cy={145 - ((v - min) / (max - min || 1)) * 110}
-                r="4"
-                fill="#2662a8"
-              >
-                <title>
-                  {time(state.snapshots[i].fetchedAt)}: {v.toFixed(6)}
-                </title>
-              </circle>
-            ))}
-          </svg>
-          <div className="row between muted">
-            <span>{date(state.snapshots[0].fetchedAt)}</span>
-            <span>
-              Range {min.toFixed(6)}–{max.toFixed(6)}
-            </span>
-            <span>{date(state.snapshots.at(-1)!.fetchedAt)}</span>
-          </div>
-        </>
-      )}
-    </section>
   );
 }
 export function Alerts({

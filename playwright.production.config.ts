@@ -17,7 +17,6 @@ export default defineConfig({
       AUTH0_CLIENT_ID: "production-smoke-client",
       SUPABASE_ENABLED: "false",
       STORAGE: "sqlite",
-      FIREBASE_SERVICE_ACCOUNT: "",
       DATABASE_PATH: "data/production-smoke.db",
       APP_ORIGIN: "https://wallet.example.test",
       PORT: "5194",

@@ -103,7 +103,7 @@ onboardingRouter.put("/", async (req, res) => {
     return;
   }
   const identity = await auth0UserInfo(res.locals.idToken, res.locals.sub);
-  // Profile, preferences and completion commit in a single SQLite/Firestore transaction.
+  // Profile, preferences and completion commit in a single local SQLite transaction.
   const saved = await userUpdate(res.locals.uid, (data) => {
     // Concurrent submissions or retries cannot reactivate or overwrite initial choices.
     if (!data.profile?.completedAt) {

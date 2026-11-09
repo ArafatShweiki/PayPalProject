@@ -4,3 +4,10 @@ data
 test-results
 playwright-report
 package-lock.json
+.temp
+.vercel
+.env*
+test-results-production
+test-results-live
+playwright-report-live
+*.log

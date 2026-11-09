@@ -7,7 +7,6 @@ import {
   ArrowLeftRight,
   ArrowRight,
   CreditCard,
-  Target,
   ChevronRight,
 } from "lucide-react";
 import { api } from "./api";
@@ -29,48 +28,6 @@ import {
   field,
   type Runner,
 } from "./ui";
-export function GoalCard({
-  goal,
-  saved,
-  active,
-  onSelect,
-}: {
-  goal: Goal;
-  saved: number;
-  active: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <div className="goal-card">
-      <div className="row between">
-        <span className="icon-tile">
-          <Target size={20} />
-        </span>
-        <span className={active ? "pill green" : "pill"}>
-          {active ? "Selected destination" : goal.currency}
-        </span>
-      </div>
-      <h3>{goal.name}</h3>
-      <p>
-        <strong>{money(saved, goal.currency)}</strong>
-        <span> / {money(goal.target, goal.currency)}</span>
-      </p>
-      <progress value={Math.min(saved, goal.target)} max={goal.target} />
-      <div className="row between">
-        <small>{Math.floor((saved / goal.target) * 100)}% of goal</small>
-        {!active && (
-          <button className="text-link" onClick={onSelect}>
-            Select goal
-          </button>
-        )}
-      </div>
-      <small>
-        Created {date(goal.createdAt)}
-        {goal.targetDate && ` · Target ${date(goal.targetDate)}`}
-      </small>
-    </div>
-  );
-}
 export function Transactions({
   entries,
   onSelect,

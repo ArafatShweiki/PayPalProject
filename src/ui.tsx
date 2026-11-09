@@ -133,15 +133,6 @@ export function PanelHead({
   );
 }
 
-export function Integration({ name, text }: { name: string; text: string }) {
-  return (
-    <div>
-      <strong>{name}</strong>
-      <p>{text}</p>
-    </div>
-  );
-}
-
 export type Runner = (
   work: () => Promise<unknown>,
   message?: string,

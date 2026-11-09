@@ -18,7 +18,6 @@ export default defineConfig({
         STORAGE: "sqlite",
         PORT: "3101",
         APP_ORIGIN: "http://127.0.0.1:5187",
-        FIREBASE_SERVICE_ACCOUNT: "",
         GEMINI_API_KEY: "",
         PAYPAL_CLIENT_ID: "",
         PAYPAL_CLIENT_SECRET: "",

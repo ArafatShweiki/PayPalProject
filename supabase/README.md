@@ -1,73 +1,53 @@
-# Dream Piggy Bank Supabase PostgreSQL
+# Supabase database setup
 
-## Goal-only Smart Savings and Circles upgrade
+Supabase PostgreSQL is authoritative for the financial ledger and all deployed supporting storage. Auth0 remains the only login provider. Configure the Auth0 third-party integration and Post Login role Action using [SETUP.md](../docs/SETUP.md).
 
-Existing installations must apply `202610310001_savings_destinations.sql` first (if not already applied), then the complete `202610310002_goal_savings_circles.sql`, before running the new savings server/UI. Apply migrations in filename order; do not rerun `setup-wallet.sql` against an existing wallet database. The upgrade preserves wallet balances and financial history. Historical unassigned savings require an explicit, neutral assignment to a personal goal; new round-ups require a selected personal or Circle goal.
+## Migration order
 
-Run `npm run check:savings` for a read-only check of the required PostgREST objects. A `ready: false` result means the migration or schema-cache reload is still required. No deployment is performed by that check. See [the implementation and migration report](../SAVINGS_CIRCLES_IMPLEMENTATION.md) for accounting, quote, invitation, voting and recovery details.
+Preserve every applied migration unchanged. Back up the intended project, inspect migration history and apply **only missing files in filename order**. Never reset a hosted project or replay a bootstrap over an existing wallet installation.
 
-Auth0 remains the only login provider, including the existing email and `paypal-sandbox` connection. There is no Supabase Auth login or token exchange.
+| File                                                                                                      | Purpose                                                                          |
+| --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| [202610260001_walletwise_core.sql](migrations/202610260001_walletwise_core.sql)                           | Wallet/ledger schema, initialization, authorization and transactional operations |
+| [202610260002_wallet_preferences.sql](migrations/202610260002_wallet_preferences.sql)                     | Preferences and per-currency savings rules                                       |
+| [202610260003_accept_savings_rule.sql](migrations/202610260003_accept_savings_rule.sql)                   | Atomic recommendation acceptance with revision checks                            |
+| [202610290001_forex_snapshots.sql](migrations/202610290001_forex_snapshots.sql)                           | Persisted indicative market history                                              |
+| [202610300001_account_state_funding.sql](migrations/202610300001_account_state_funding.sql)               | Versioned auxiliary state, durable Sandbox funding and verified reversal/review  |
+| [202610300002_gemini_reports.sql](migrations/202610300002_gemini_reports.sql)                             | Report periods, fingerprints, status and history                                 |
+| [202610300003_progressive_loading.sql](migrations/202610300003_progressive_loading.sql)                   | Service-only startup/dashboard/activity/report projections                       |
+| [202610310001_savings_destinations.sql](migrations/202610310001_savings_destinations.sql)                 | Signed personal-goal allocation and reconciliation projections                   |
+| [202610310002_goal_savings_circles.sql](migrations/202610310002_goal_savings_circles.sql)                 | Goal/Circle destinations, quotes, contributions and unanimous proposals          |
+| [202611010001_circle_invitation_membership.sql](migrations/202611010001_circle_invitation_membership.sql) | Membership-aware invitation preview and explicit idempotent join                 |
+| [202611060001_backend_storage.sql](migrations/202611060001_backend_storage.sql)                           | Shared Supabase records, limits, fenced leases and provider-isolated history     |
+| [202611060002_product_enhancements.sql](migrations/202611060002_product_enhancements.sql)                 | Coach, guide, timeline, milestones and reviewed-rule checks                      |
+| [202611080001_delete_savings_goal.sql](migrations/202611080001_delete_savings_goal.sql)                   | Atomic goal deletion/return, retained ledger identity and refund safety          |
 
-For membership-aware invitations, also apply [202611010001_circle_invitation_membership.sql](migrations/202611010001_circle_invitation_membership.sql) after the Circle migration. It adds service-only invitation status and join functions without changing balances or existing memberships. Existing members see “You're already in this circle” and Open Circle instead of Join Circle. A Circle row lock prevents repeated joins from creating additional join events. Public invitation previews remain unchanged. Regenerated `setup-wallet.sql` includes this upgrade for new databases; existing databases should use the versioned migration.
+For a linked CLI-managed project, review `supabase migration list`, then use `supabase db push` after validating the intended project and pending set. Alternatively use the SQL Editor as database owner, submitting each complete missing migration atomically. On failure, roll back and inspect rather than continuing fragments. Do not assume SQL Editor application updates the CLI's migration-history bookkeeping; reconcile that history before later CLI pushes.
 
-## Deployment configuration
+The initial migration changes default privileges for future public objects owned by `postgres`; review this on shared projects and explicitly grant future objects. If another owner creates objects, equivalent default-privilege controls need review. Keep RLS, explicit owner-scoped client SELECT grants, service-only financial RPCs and the unexposed `private` schema intact.
 
-1. Create/select a Supabase project. Link the CLI with `supabase link --project-ref <project-ref>`, then apply all versioned migrations with `supabase db push`. Alternatively, run the SQL files in filename order in the SQL editor as the database owner. Back up an existing database before deployment; this initial schema expects the Dream Piggy Bank table names to be unused.
-2. In **Authentication ? Third-party Auth**, add **Auth0** with your tenant ID and region. For `dev-arafat.eu.auth0.com`, these are `dev-arafat` and `eu`; confirm against your actual `AUTH0_DOMAIN`. Keep the existing Auth0 application, callbacks, email connection and PayPal Sandbox connection.
-3. Deploy `auth0-actions/add-supabase-authenticated-role.js` as an Auth0 **Post Login** Action and attach it to the Login flow. It sets the literal, non-namespaced **ID-token** claim `role: "authenticated"`. Do not substitute an access-token claim. Use RS256 signing. Sign out and sign in again so existing sessions obtain the new claim.
-4. Configure server environment variables:
+## Guarded bootstrap
 
-   ```dotenv
-   AUTH0_ENABLED=true
-   # Keep the existing AUTH0_DOMAIN and AUTH0_CLIENT_ID (no custom API audience).
-   SUPABASE_ENABLED=true
-   SUPABASE_URL=https://<project-ref>.supabase.co
-   SUPABASE_PUBLISHABLE_KEY=<publishable-key>
-   SUPABASE_SECRET_KEY=<server-secret-key>
-   ```
+[setup-wallet.sql](setup-wallet.sql) and [its generator](../scripts/build-wallet-setup.ts) remain supported historical installation assets. The checked-in bootstrap contains the first **11** migrations, through `202611060001_backend_storage.sql`. It does **not** include the Coach/product-enhancement or personal-goal-deletion migrations.
 
-   The server supports legacy `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` alternatives. Never put a secret/service-role key in a `VITE_` variable. Only the URL and publishable key are returned from `/api/config`. Restart the server after configuration changes. CSP permits only the configured Supabase origin.
+Prefer the complete versioned migration sequence for a new installation. If using the guarded bootstrap, the starting schema must contain no wallet objects; an existing compatible `forex_snapshots` table is permitted. Run the entire file in its outer transaction as instructed, then apply `202611060002_product_enhancements.sql` and `202611080001_delete_savings_goal.sql` in order. Review migration-history bookkeeping if later using the CLI. The bootstrap aborts conflicting wallet schemas and is not rerunnable over an installed wallet. Do not regenerate or modify SQL as documentation cleanup.
 
-5. Leave `private` out of the Data API's exposed schemas. In Supabase's API settings, disable automatic grants for new public objects if offered. Migrations revoke default table/sequence/function privileges for objects created by `postgres` in `public`; if you use another migration owner, apply equivalent default-privilege rules for that owner too. Grant future objects explicitly.
-6. Validate with two separate Auth0 accounts: each starts with three empty wallets; complete onboarding, reload, and confirm the preferences survive. Query `profiles` with each account's ID token and confirm only its own row is returned. Check a missing/forged/expired token is rejected by the hosted gateway. Do not use a service key for this browser validation.
-
-The integration follows the [official Supabase Auth0 guide](https://supabase.com/docs/guides/auth/third-party/auth0): the browser SDK's `accessToken` callback returns `getIdTokenClaims().__raw`. Supabase verifies the signature and trusted issuer before PostgreSQL evaluates RLS. The local role check is a configuration guard, not signature verification. The existing first-party Express server verifies the same app-bound Auth0 **ID token** (issuer, client-ID audience, RS256, expiry, subject, authenticated role and authorized party), then derives the opaque `sub` used for backend operations. Neither email nor a UUID conversion identifies an account.
-
-## Database and service boundaries
-
-- `src/supabase.ts`: official SDK, current ID-token callback, no Supabase session storage, no anonymous fallback after logout.
-- `server/supabase.ts`: server-only database services for profiles, preferences, wallets, transactions and ledger RPCs.
-- `server/database-state.ts`: maps PostgreSQL financial data into the existing UI, reports and currency insights.
-- `migrations/202610260001_walletwise_core.sql`: all eleven requested tables, RLS, explicit grants, initialization/onboarding and transactional ledger functions.
-- `migrations/202610260002_wallet_preferences.sql`: atomic partial preference updates and persisted round-up rules.
-- `migrations/202610260003_accept_savings_rule.sql`: atomic acceptance of existing report recommendations, with settings and ledger revision checks. Apply this new migration before using recommendation acceptance with Supabase.
-
-Clients have SELECT-only grants with subject-based RLS. Exchange rates are shared with authenticated clients. Even `service_role` has only SELECT access to these tables; writes use explicitly granted security-definer functions with an empty search path. The database owner remains responsible for administrative maintenance. Default grants do not affect unrelated existing tables.
-
-Initialization inserts the profile, ILS/USD/JOD wallets and savings rules atomically with conflict handling. Wallets start at zero. Onboarding locks the profile and completes once; subsequent preference changes use a separate patch operation. All monetary amounts are integer minor units: 100 per ILS/USD, 1000 per JOD. Balances and postings are bounded to JavaScript's safe-integer range.
-
-Monetary operations lock the user's wallets in currency order, check per-currency balanced postings and nonnegative balances, and commit the transaction, ledger and balances together. `(auth0_sub, request_id)` prevents duplicate execution; a changed fingerprint rejects key reuse. Refunds must reverse an owned purchase and can occur only once even with a different request ID. No public route credits arbitrary opening balances. PayPal Sandbox capture credits test balances only through the new atomic funding RPCs; these are not real customer funds.
-
-All private auxiliary goals, alerts, notifications and cached report history now persist in `account_state`, keyed by verified owner with optimistic version checks. The old cache is used only to import an existing verified account's legacy auxiliary records on first access, without deleting originals. Financial balances and history remain authoritative in the established SQL ledger. Deployed shared caches, rate limits, expiring fenced leases and provider metadata now use service-only PostgreSQL RPCs from migration 202611060001_backend_storage.sql; SQLite is local/test only.
-
-- `migrations/202610290001_forex_snapshots.sql`: persisted authenticated market history.
-- `migrations/202610300001_account_state_funding.sql`: owner-scoped account state, funding attempts, unique provider IDs, atomic funding credits, verified full-refund reversals and review status. Clients have SELECT-only grants. Service-role direct writes apply only to versioned auxiliary account state; funding/ledger writes require the RPCs.
-- `migrations/202610300002_gemini_reports.sql`: the current reports implementation's persisted cache/history; apply in migration order.
-
-Apply all migrations to the intended project without reset. If the API returns `PGRST205`, check the project/schema, apply missing migrations and reload its schema cache. See [PAYPAL_FUNDING.md](../PAYPAL_FUNDING.md) for merchant configuration and recovery.
-
-## Verification
+## Readiness and recovery
 
 ```sh
-npm test
-npm run lint
-npm run build
-npm run test:e2e -- tests/e2e/auth.spec.ts tests/e2e/onboarding.spec.ts
+npm run check:database
+npm run check:savings
 ```
 
-`tests/database.test.ts` executes all migrations in PGlite (embedded PostgreSQL), including RLS and grants under actual `authenticated`, `anon` and `service_role` roles. Only `pgcrypto` installation is omitted in that harness because core PostgreSQL already supplies `gen_random_uuid()`. It tests all user tables, zero wallets, JOD accounting, rollback, replay, refund protection and onboarding/preferences. SDK tests inspect actual outgoing authorization headers and logout behavior. Backend tests cover verified subject propagation and persisted savings rules; existing Auth0 tests verify signed JWTs.
+These checks request schema metadata without printing credentials or account rows and fail when required objects are absent. Visibility alone does not establish function bodies, grants, RLS or applied versions. For `PGRST202` / `PGRST205`, confirm the project, missing migrations, exposed public schema and PostgREST schema cache. A reviewed reload can use `NOTIFY pgrst, 'reload schema';` in the SQL Editor. Keep `private` unexposed and do not disable RLS.
 
-For a full local Supabase stack with Docker and the Supabase CLI:
+[diagnostics.sql](diagnostics.sql) reads catalog metadata. `savings_reconciliation_issues` identifies orphaned/conflicting legacy allocations or ledger discrepancies; investigate without summing the issue queue as a balance or inventing corrective funds. Preserve original records. [LEGACY_STORAGE.md](../docs/LEGACY_STORAGE.md) covers read-only export, dry-run import, reconciliation and cutover/rollback.
+
+## Local verification
+
+`npm test` applies actual migrations in PGlite and checks roles, RLS, ownership, precision, atomicity and replay. `npm run test:postgres` uses disposable native PostgreSQL with 16 independent connections and no hosted credentials. See [TESTING.md](../docs/TESTING.md).
+
+For an explicitly disposable local Supabase stack with Docker and the CLI:
 
 ```sh
 supabase start
@@ -75,40 +55,6 @@ supabase db reset
 supabase test db
 ```
 
-The pgTAP smoke suite in `tests/rls.sql` runs in a rolled-back transaction. Local SQL tests simulate claims _after_ gateway verification; they do not prove a hosted Auth0/Supabase tenant is configured correctly. Hosted gateway verification requires the manual deployment checks above.
+The reset above is local-only. [tests/rls.sql](tests/rls.sql) runs its pgTAP smoke checks in a rolled-back transaction. Local simulated JWT claims follow the gateway boundary and cannot prove a hosted tenant is configured correctly. Verify actual two-account ID-token/RLS behavior in isolated Preview.
 
-## Current authentication status
-
-See [AUTH0_SETUP.md](../AUTH0_SETUP.md) for the 2026-10-27 audience removal and live blockers. Audience-free email redirects reach Auth0 login; PayPal reports a disabled connection. The currently configured Data API returns PGRST205 for Dream Piggy Bank tables. Confirm the intended project and migrations before testing authenticated profiles. The earlier audit is historical.
-
-## Audit diagnostics
-
-See `../AUDIT_REPORT.md` for the verification performed on 2026-10-26 and remaining deployment checks. The audit did not alter live user data or apply migration 003.
-
-```sh
-npx tsx scripts/check-integrations.ts
-npx tsx scripts/check-pma-readonly.ts
-npx tsx scripts/audit-secrets.ts
-```
-
-These diagnostics issue read-only external requests and print statuses instead of tokens or user records. Tests ignore local environment files; Playwright uses its own API/frontend ports (3101/5187), disabled external integrations, and controlled authentication/provider fixtures and isolated test data. Local runtime precedence is deployment/process variables, `.env.local`, `.env`, then `.env.auth0`.
-
-
-## Progressive startup read projections
-
-Apply `migrations/202610300003_progressive_loading.sql` after the existing migrations. It adds service-only `walletwise_dashboard`, `walletwise_activity_page` and `walletwise_report_page` functions, plus owner/cursor and goal indexes. These functions project only the signed-in owner's data. Browser roles cannot execute them or change balances. Existing RLS policies, financial functions and account data are untouched.
-
-Bootstrap reads the profile once, then wallet balances and rules concurrently. Existing accounts do not run initialization again. Missing wallets use the established zero-initialization RPC once, followed by validation; a failed repair returns an error. Dashboard projections exclude legacy JSON ledger/operation history, return the latest five saved reports, and compute complete-ledger spending/goal summaries. Activity uses stable timestamp/ID cursors and database currency/category/date/savings filters; full history is not loaded at startup. Existing SQL financial mutations and explicit report calculations keep their established data sources.
-
-`SUPABASE_REQUEST_TIMEOUT_MS=8000` bounds database requests. SDK retries are disabled so application deadlines/idempotency govern recovery. `PERFORMANCE_DIAGNOSTICS=true` exposes fixed-label timing durations only outside production. No cloud migration was applied by this performance change.
-
-
-## Product enhancements (2026-11-06)
-
-The savings outlook, optional first-use guide, Circle timeline/milestones and reviewed recommendation validation require `202611060002_product_enhancements.sql` after all preceding migrations, including `202611060001_backend_storage.sql`. Validate in an isolated Preview project before manually applying to the intended hosted project. No hosted migration or deployment was executed by this change. No new environment variable is required.
-
-See [the product enhancement report](../PRODUCT_ENHANCEMENT_REPORT.md), [executed enhancement tests](../ENHANCEMENT_TEST_REPORT.md) and [the Sandbox demo guide](../HACKATHON_DEMO_GUIDE.md) for architecture, verification and external-provider limitations.
-
-### Personal goal deletion
-
-Apply `migrations/202611080001_delete_savings_goal.sql` before deploying the goal deletion UI/API. It adds the service-only `walletwise_delete_savings_goal` RPC: the goal balance returns atomically to the available wallet in the same currency, the goal disappears from account state, and an affected default is paused. A deleted goal identity remains solely for ledger references; historical transactions are not erased. Retries cannot return funds twice. Subsequent merchant refunds retain already-returned savings. No hosted migration is applied automatically.
+[forex-cron.sql](forex-cron.sql) is an optional reviewed Cron/pg_net/Vault recipe, not an automatically applied migration. Scheduling, provider quotas/licensing and retention are operator decisions. No hosted database change is performed by the cleanup.
